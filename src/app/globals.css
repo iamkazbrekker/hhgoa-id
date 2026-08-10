@@ -19,10 +19,21 @@
   }
 }
 
+/*
+ * Clip any stray horizontal overflow at the viewport root without
+ * creating a scroll container (which would break position: sticky).
+ * overflow-x: hidden on <html> is safe for this.
+ */
+html {
+  overflow-x: hidden;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  /* Ensure body never grows wider than the viewport */
+  max-width: 100%;
 }
 
 @font-face {
@@ -37,4 +48,25 @@ body {
   src: url("/fonts/impact.ttf") format("truetype");
   font-weight: 400;
   font-style: normal;
+}
+
+/*
+ * Card preview scaling — dimensions and scale factor are driven by
+ * a ResizeObserver in HomeClient.tsx and applied as inline styles.
+ * These base rules just ensure correct flex behaviour and a smooth
+ * transition when the viewport resizes.
+ */
+.card-scale-wrapper {
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  /* height is set as an inline style by JS */
+}
+
+.card-scale-target {
+  flex-shrink: 0;
+  transform-origin: top center;
+  transition: transform 0.15s ease-out;
+  /* transform is set as an inline style by JS */
 }

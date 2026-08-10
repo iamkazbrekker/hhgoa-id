@@ -35,6 +35,13 @@ interface IDCardProps extends Partial<IDCardData> {
   onPhotoTransformChange?: (t: PhotoTransform) => void;
   /** When true, replaces Next.js <Image> with plain <img> so html-to-image can render correctly */
   forExport?: boolean;
+  /**
+   * The CSS scale factor applied to the card wrapper by the parent (e.g. 0.75).
+   * Touch coordinate deltas are divided by this value so photo dragging stays
+   * accurate even when the card preview is scaled down on mobile.
+   * Defaults to 1 (no scaling).
+   */
+  scaleHint?: number;
 }
 
 /**
@@ -77,6 +84,7 @@ export default function IDCard({
   photoTransform = { scale: 1, x: 0, y: 0 },
   onPhotoTransformChange,
   forExport = false,
+  scaleHint = 1,
 }: IDCardProps) {
   const parts = teamName.trim().toUpperCase().split(/\s+/);
   const mid = Math.ceil(parts.length / 2);
@@ -118,7 +126,13 @@ export default function IDCard({
       const initScale = photoTransform.scale;
       const onMove = (ev: TouchEvent) => {
         if (ev.touches.length !== 1) return;
-        onPhotoTransformChange({ scale: initScale, x: initX + (ev.touches[0].clientX - startX), y: initY + (ev.touches[0].clientY - startY) });
+        // Divide by scaleHint so the movement tracks correctly when the card
+        // preview is CSS-scaled down on mobile (otherwise it moves too fast).
+        onPhotoTransformChange({
+          scale: initScale,
+          x: initX + (ev.touches[0].clientX - startX) / scaleHint,
+          y: initY + (ev.touches[0].clientY - startY) / scaleHint,
+        });
       };
       const onEnd = () => {
         window.removeEventListener("touchmove", onMove);
@@ -212,7 +226,7 @@ export default function IDCard({
                   />
                   {interactive && (
                     <div style={{ position: "absolute", bottom: 4, right: 4, background: "rgba(0,0,0,0.55)", padding: "2px 6px", borderRadius: 2, pointerEvents: "none" }}>
-                      <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 9, fontFamily: "sans-serif", letterSpacing: 0.5 }}>drag · scroll to zoom</span>
+                      <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 9, fontFamily: "sans-serif", letterSpacing: 0.5 }}>drag · touch to reposition</span>
                     </div>
                   )}
                 </div>

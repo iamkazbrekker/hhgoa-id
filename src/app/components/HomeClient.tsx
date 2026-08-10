@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import Image from "next/image";
 import IDCard, { IDCardData, PhotoTransform } from "./IDCard";
 
@@ -59,6 +59,26 @@ export default function HomeClient() {
   const generatorRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const prevPhotoUrl = useRef<string | null>(null);
+
+  /* ── Card preview scale ──
+   * A ResizeObserver watches the card wrapper div and computes how much the
+   * 440 px-wide IDCard should be scaled so it always fits the column width.
+   * On desktop (column is exactly 440 px) the scale stays at 1.          */
+  const cardWrapperRef = useRef<HTMLDivElement>(null);
+  const [cardScale, setCardScale] = useState(1);
+
+  useEffect(() => {
+    const el = cardWrapperRef.current;
+    if (!el) return;
+    const update = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setCardScale(Math.min(1, w / 440));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   /* ── HEIC-aware photo handler ── */
   const handlePhotoChange = useCallback(async (file: File | null) => {
@@ -217,7 +237,7 @@ export default function HomeClient() {
   }, [generateImage]);
 
   return (
-    <main style={{ background: "#060f08" }}>
+    <main style={{ background: "#060f08", overflowX: "hidden" }}>
 
       {/* ═══ HERO ═══ */}
       <section style={{ position: "relative", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", textAlign: "center" }}>
@@ -250,11 +270,11 @@ export default function HomeClient() {
             width: "100%",
             maxWidth: 860,
             margin: "0 auto",
-            padding: "80px 24px",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
           }}
+          className="py-14 sm:py-24 px-5 sm:px-8"
         >
           <div
             style={{
@@ -262,12 +282,14 @@ export default function HomeClient() {
               border: "2px solid #9ac95f",
               background: "rgba(10,35,15,0.7)",
               boxShadow: "0 0 20px rgba(154,201,95,0.2)",
-              padding: "6px 20px",
-              marginBottom: 32,
               borderRadius: 2,
             }}
+            className="px-4 py-1.5 sm:px-5 sm:py-2 mb-6 sm:mb-8"
           >
-            <span style={{ fontFamily: "Anton, Impact, sans-serif", fontSize: 12, letterSpacing: 6, color: "#9ac95f", textTransform: "uppercase" }}>
+            <span
+              style={{ fontFamily: "Anton, Impact, sans-serif", color: "#9ac95f", textTransform: "uppercase" }}
+              className="text-[10px] sm:text-xs tracking-[3px] sm:tracking-[6px]"
+            >
               HACKER HOUSE GOA • 2026
             </span>
           </div>
@@ -275,7 +297,8 @@ export default function HomeClient() {
           <h1
             style={{
               fontFamily: "Anton, Impact, sans-serif",
-              fontSize: "clamp(64px, 9vw, 115px)",
+              /* clamp floor lowered so the text scales on 320-375 px phones */
+              fontSize: "clamp(32px, 11vw, 115px)",
               color: "#FEE101",
               textTransform: "uppercase",
               lineHeight: 0.9,
@@ -295,10 +318,11 @@ export default function HomeClient() {
               fontSize: "clamp(32px, 6vw, 64px)",
               color: "#FF0080",
               textTransform: "uppercase",
-              margin: "0 0 32px",
-              letterSpacing: 10,
+              margin: "0 0 24px",
+              /* letterSpacing is responsive — tight on phones, wide on desktop */
               textShadow: "3px 3px 0 #000",
             }}
+            className="tracking-[4px] sm:tracking-[10px]"
           >
             GOA
           </h2>
@@ -306,13 +330,12 @@ export default function HomeClient() {
           <p
             style={{
               fontFamily: "sans-serif",
-              fontSize: 18,
               color: "rgba(254,225,1,0.85)",
-              marginBottom: 44,
               lineHeight: 1.7,
               maxWidth: 520,
               textShadow: "0 2px 4px rgba(0,0,0,0.8)",
             }}
+            className="text-base sm:text-lg mb-8 sm:mb-11"
           >
             Your official hackathon identity.<br />
             <span style={{ color: "#9ac95f", fontWeight: 600 }}>Stamp your presence. Show your stack.</span>
@@ -322,12 +345,10 @@ export default function HomeClient() {
             onClick={() => generatorRef.current?.scrollIntoView({ behavior: "smooth" })}
             style={{
               fontFamily: "Anton, Impact, sans-serif",
-              fontSize: 18,
               letterSpacing: 3,
               background: "#FEE101",
               color: "#060f08",
               border: "3px solid #FEE101",
-              padding: "18px 48px",
               cursor: "pointer",
               textTransform: "uppercase",
               display: "inline-flex",
@@ -337,6 +358,7 @@ export default function HomeClient() {
               boxShadow: "0 10px 30px rgba(254,225,1,0.25)",
               transition: "all 0.2s ease",
             }}
+            className="text-base sm:text-lg px-8 py-4 sm:px-12 sm:py-[18px]"
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "transparent";
               e.currentTarget.style.color = "#FEE101";
@@ -359,20 +381,20 @@ export default function HomeClient() {
       </section>
 
       {/* ═══ GENERATOR ═══ */}
-      <section ref={generatorRef} style={{ background: "#030a04", padding: "96px 24px", minHeight: "100vh" }}>
+      <section ref={generatorRef} style={{ background: "#030a04", minHeight: "100vh" }} className="py-12 px-4 sm:py-24 sm:px-6">
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 72 }}>
-            <p style={{ fontFamily: "Anton, sans-serif", fontSize: 11, letterSpacing: 6, color: "#9ac95f", textTransform: "uppercase", marginBottom: 16 }}>── ID CARD GENERATOR ──</p>
+          <div className="text-center mb-10 sm:mb-16">
+            <p style={{ fontFamily: "Anton, sans-serif", fontSize: 11, color: "#9ac95f", textTransform: "uppercase", marginBottom: 16 }} className="tracking-[3px] sm:tracking-[6px]">── ID CARD GENERATOR ──</p>
             <h2 style={{ fontFamily: "Anton, Impact, sans-serif", fontSize: "clamp(32px, 5vw, 60px)", color: "#FEE101", textTransform: "uppercase", margin: 0, textShadow: "3px 3px 0 #000", WebkitTextStroke: "0.5px #000", letterSpacing: 2 }}>BUILD YOUR IDENTITY</h2>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 440px", gap: 56, alignItems: "start" }}>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-8 lg:gap-14 items-start">
 
             {/* ── FORM ── */}
-            <div style={{ background: "rgba(20,50,25,0.65)", border: "2px solid #9ac95f", padding: "40px", backdropFilter: "blur(8px)" }}>
+            <div className="bg-[rgba(20,50,25,0.65)] border-2 border-[#9ac95f] p-6 sm:p-10 backdrop-blur-md">
               <h3 style={{ fontFamily: "Anton, sans-serif", color: "#FEE101", fontSize: 18, letterSpacing: 4, textTransform: "uppercase", margin: "0 0 32px", paddingBottom: 16, borderBottom: "2px solid rgba(154,201,95,0.2)" }}>YOUR DETAILS</h3>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                 <div>
                   <label style={LABEL_STYLE}>First Name</label>
                   <input type="text" placeholder="SAMARTH" value={form.firstName} maxLength={12}
@@ -402,7 +424,8 @@ export default function HomeClient() {
 
               <div style={{ marginBottom: 28 }}>
                 <label style={LABEL_STYLE}>Role</label>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                {/* Always 3 columns — labels are short enough to fit at 320 px+ */}
+                <div className="grid grid-cols-3 gap-2">
                   {ROLES.map((r) => {
                     const active = form.role === r.value;
                     return (
@@ -435,8 +458,8 @@ export default function HomeClient() {
                       <img src={form.photoUrl} alt="preview" style={{ width: 64, height: 64, objectFit: "cover", border: "2px solid #9ac95f" }} />
                       <div>
                         <div style={{ color: "#9ac95f", fontFamily: "Anton, sans-serif", fontSize: 13, letterSpacing: 2 }}>Photo Uploaded ✓</div>
-                        <div style={{ color: "rgba(255,255,255,0.35)", fontFamily: "sans-serif", fontSize: 11, marginTop: 4 }}>Click to change</div>
-                        <div style={{ color: "rgba(154,201,95,0.5)", fontFamily: "sans-serif", fontSize: 10, marginTop: 2 }}>Drag & scroll to adjust on the preview →</div>
+                        <div style={{ color: "rgba(255,255,255,0.35)", fontFamily: "sans-serif", fontSize: 11, marginTop: 4 }}>Tap to change</div>
+                        <div style={{ color: "rgba(154,201,95,0.5)", fontFamily: "sans-serif", fontSize: 10, marginTop: 2 }}>Drag or touch to reposition on preview</div>
                       </div>
                     </div>
                   ) : (
@@ -456,15 +479,33 @@ export default function HomeClient() {
             </div>
 
             {/* ── LIVE PREVIEW + ACTIONS ── */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, position: "sticky", top: 32 }}>
+            <div className="w-full flex flex-col items-center gap-4 lg:sticky lg:top-8">
               <div style={{ fontFamily: "Anton, sans-serif", fontSize: 11, letterSpacing: 4, color: "#9ac95f", textTransform: "uppercase" }}>── Live Preview ──</div>
 
-              <IDCard
-                {...preview}
-                interactive={true}
-                photoTransform={photoTransform}
-                onPhotoTransformChange={setPhotoTransform}
-              />
+              {/*
+               * Card wrapper — JS-driven scaling via ResizeObserver.
+               * The wrapper's height matches the card's visual height after scaling
+               * so the surrounding layout collapses correctly.
+               * The inner div applies the scale transform from top-center.
+               */}
+              <div
+                ref={cardWrapperRef}
+                className="card-scale-wrapper"
+                style={{ height: `${Math.round(620 * cardScale)}px` }}
+              >
+                <div
+                  className="card-scale-target"
+                  style={{ transform: `scale(${cardScale})` }}
+                >
+                  <IDCard
+                    {...preview}
+                    interactive={true}
+                    photoTransform={photoTransform}
+                    onPhotoTransformChange={setPhotoTransform}
+                    scaleHint={cardScale}
+                  />
+                </div>
+              </div>
 
               {/* Zoom slider */}
               {form.photoUrl && (
@@ -531,7 +572,7 @@ export default function HomeClient() {
 
               <p style={{ fontFamily: "sans-serif", fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "center", margin: 0, lineHeight: 1.7 }}>
                 Preview updates as you type.<br />
-                Drag or scroll to adjust photo.
+                Touch or drag to adjust photo position.
               </p>
             </div>
           </div>
