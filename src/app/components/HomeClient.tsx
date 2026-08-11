@@ -362,9 +362,20 @@ export default function HomeClient() {
       }
 
       // Desktop (and mobile fallback): open X composer with pre-filled text + share URL.
-      // X will fetch /share/<id> and show the og:image (the generated card) as a preview.
+      // On mobile, try opening the native X app first via deep link, falling back to the web intent.
+      const isMobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      
       setExportStatus("Opening X...");
-      window.open(intentUrl, "_blank");
+      if (isMobile) {
+        const appUrl = `twitter://post?message=${encodedTweet}`;
+        window.location.href = appUrl;
+        
+        setTimeout(() => {
+          window.location.href = intentUrl;
+        }, 1500);
+      } else {
+        window.open(intentUrl, "_blank");
+      }
     } catch (err) {
       console.error("Share on X failed:", err);
       setExportStatus("Share failed — try Download PNG instead.");
