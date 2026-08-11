@@ -372,6 +372,11 @@ export default function HomeClient() {
           }}
         />
 
+        {/* Brand Logo element at top-left corner */}
+        <div style={{ position: "absolute", top: "clamp(16px, 4vw, 28px)", left: "clamp(16px, 4vw, 28px)", width: 100, height: 44, zIndex: 10, opacity: 0.85 }}>
+          <Image src="/id/2-47.svg" alt="2:47pm studio" fill style={{ objectFit: "contain" }} priority />
+        </div>
+
         {/* Hero Content (Centered) */}
         <div
           style={{
@@ -386,55 +391,40 @@ export default function HomeClient() {
           }}
           className="py-14 sm:py-24 px-5 sm:px-8"
         >
-          <div
-            style={{
-              display: "inline-block",
-              border: "2px solid #9ac95f",
-              background: "rgba(10,35,15,0.7)",
-              boxShadow: "0 0 20px rgba(154,201,95,0.2)",
-              borderRadius: 2,
-            }}
-            className="px-4 py-1.5 sm:px-5 sm:py-2 mb-6 sm:mb-8"
-          >
-            <span
-              style={{ fontFamily: "Anton, Impact, sans-serif", color: "#9ac95f", textTransform: "uppercase" }}
-              className="text-[10px] sm:text-xs tracking-[3px] sm:tracking-[6px]"
+
+
+          {/* HACKER [गोवा] HOUSE title matching reference layout */}
+          <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", margin: "0 0 32px", userSelect: "none" }}>
+            <div style={{ position: "relative", width: "100%", maxWidth: 640, height: "auto", display: "block" }}>
+              <Image
+                src="/Hacker house.png"
+                alt="Hacker House"
+                width={640}
+                height={160}
+                style={{ width: "100%", height: "auto", display: "block" }}
+                priority
+              />
+            </div>
+            {/* The overlapping pink "गोवा" text in the center */}
+            <div
+              style={{
+                position: "absolute",
+                top: "51%",
+                left: "53%",
+                transform: "translate(-50%, -50%) rotate(-5deg)",
+                width: "75px",
+                zIndex: 10,
+                filter: "drop-shadow(4px 4px 0px #000)",
+              }}
             >
-              HACKER HOUSE GOA • 2026
-            </span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/id/goa_hindi.svg"
+                alt="गोवा"
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
+            </div>
           </div>
-
-          <h1
-            style={{
-              fontFamily: "Anton, Impact, sans-serif",
-              fontSize: "clamp(32px, 11vw, 115px)",
-              color: "#FEE101",
-              textTransform: "uppercase",
-              lineHeight: 0.9,
-              margin: "0 0 12px",
-              textShadow: "5px 5px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000",
-              WebkitTextStroke: "1px #000",
-              letterSpacing: 3,
-            }}
-          >
-            HACKER<br />
-            <span style={{ color: "transparent", WebkitTextStroke: "3px #FEE101", textShadow: "none" }}>HOUSE</span>
-          </h1>
-
-          <h2
-            style={{
-              fontFamily: "Anton, Impact, sans-serif",
-              fontSize: "clamp(32px, 6vw, 64px)",
-              color: "#FF0080",
-              textTransform: "uppercase",
-              margin: "0 0 24px",
-              /* letterSpacing is responsive — tight on phones, wide on desktop */
-              textShadow: "3px 3px 0 #000",
-            }}
-            className="tracking-[4px] sm:tracking-[10px]"
-          >
-            GOA
-          </h2>
 
           <p
             style={{
@@ -446,8 +436,8 @@ export default function HomeClient() {
             }}
             className="text-base sm:text-lg mb-8 sm:mb-11"
           >
-            Your official hackathon identity.<br />
-            <span style={{ color: "#9ac95f", fontWeight: 600 }}>Stamp your presence. Show your stack.</span>
+            Stamp your presence. Show your stack <br />
+            <span style={{ color: "#9ac95f", fontWeight: 600 }}>#FrameInGoa</span>
           </p>
 
           <button
