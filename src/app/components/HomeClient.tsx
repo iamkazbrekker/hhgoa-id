@@ -195,11 +195,79 @@ export default function HomeClient() {
   const shareOnX = useCallback(async () => {
     setIsExporting(true);
     setExportStatus("Preparing...");
+
+    // ── Single source of truth for the post text ──
+    const POST_TEXT =
+      "My official Hacker House Goa 2026 ID card! \uD83C\uDFE0\uD83D\uDCBB\n\n#HackerHouseGoa #HHGoa2026";
+
+    // Detect mobile (Android or iOS)
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
     try {
       const dataUrl = await generateImage();
       if (!dataUrl) return;
 
-      // Try Web Share API (works on mobile and some desktop browsers)
+      // ── Mobile path ──
+      if (isMobile) {
+        // 1. Download the card so the user has it ready to attach manually.
+        const link = document.createElement("a");
+        link.download = "hh-goa-id.png";
+        link.href = dataUrl;
+        link.click();
+
+        setExportStatus("Image saved — opening X app...");
+
+        const encodedText = encodeURIComponent(POST_TEXT);
+        // X app deep-link scheme (works on both Android and iOS when the app is installed).
+        // "twitter://" is the well-known scheme; "x-twitter://" is the newer alias but
+        // "twitter://" still works on the current X app on both platforms.
+        const appDeepLink = `twitter://post?message=${encodedText}`;
+        // Web fallback (x.com is the current canonical domain for intent URLs).
+        const webFallback = `https://x.com/intent/post?text=${encodedText}`;
+
+        // Attempt to open the app via an invisible iframe (avoids leaving the page
+        // blank if the scheme is not handled).  iOS Safari and Android Chrome both
+        // honour the scheme redirect from an iframe src, and if the app is not
+        // installed neither platform throws a visible error.
+        //
+        // LIMITATION: No browser allows a webpage to *know* whether a custom URL
+        // scheme succeeded.  We therefore always set a fallback timer — if the OS
+        // switches to the X app the timer fires but the user is already in the app
+        // and the new tab that opens stays in the background / is immediately
+        // dismissible.  This is the best-effort approach without requiring a backend
+        // or OAuth.
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        document.body.appendChild(iframe);
+
+        let appOpened = false;
+
+        // visibilitychange fires when the browser is backgrounded (app switched to).
+        const onVisibilityChange = () => {
+          if (document.hidden) appOpened = true;
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
+
+        // Trigger the deep link.
+        iframe.src = appDeepLink;
+
+        // After 1.5 s, if the page is still visible the app didn't open → fall back.
+        setTimeout(() => {
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+          document.body.removeChild(iframe);
+          if (!appOpened) {
+            // App not installed or deep link failed — open web composer.
+            window.open(webFallback, "_blank");
+            setExportStatus("Opening X web composer...");
+          }
+        }, 1500);
+
+        return;
+      }
+
+      // ── Desktop path (unchanged from original) ──
+
+      // Try Web Share API first (available in some desktop browsers like Chrome on macOS).
       if (navigator.share) {
         const response = await fetch(dataUrl);
         const blob = await response.blob();
@@ -208,23 +276,21 @@ export default function HomeClient() {
           await navigator.share({
             files: [file],
             title: "My Hacker House Goa ID Card",
-            text: "My official Hacker House Goa 2026 ID card! \uD83C\uDFE0\uD83D\uDCBB #HackerHouseGoa #HHGoa2026",
+            text: POST_TEXT,
           });
           setExportStatus("Shared!");
           return;
         }
       }
 
-      // Fallback: download image + open X tweet intent
+      // Final desktop fallback: download image + open X tweet intent.
       const link = document.createElement("a");
       link.download = "hh-goa-id.png";
       link.href = dataUrl;
       link.click();
       setExportStatus("Image saved — opening X...");
       setTimeout(() => {
-        const text = encodeURIComponent(
-          "My official Hacker House Goa 2026 ID card! \uD83C\uDFE0\uD83D\uDCBB\n\n#HackerHouseGoa #HHGoa2026"
-        );
+        const text = encodeURIComponent(POST_TEXT);
         window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
       }, 600);
     } catch (err) {
