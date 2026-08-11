@@ -173,7 +173,7 @@ export default function HomeClient() {
     const url = URL.createObjectURL(processedFile);
     prevPhotoUrl.current = url;
     setForm((p) => ({ ...p, photoUrl: url }));
-    setPhotoTransform({ scale: 1.25, x: 0, y: 0 }); // pre-zoomed so photo automatically zooms in on upload
+    setPhotoTransform({ scale: 1, x: 0, y: 0 }); // reset to 100% full view showing whole un-cut photo
   }, []);
 
   const handleDrop = useCallback(
