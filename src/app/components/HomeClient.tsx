@@ -195,7 +195,7 @@ export default function HomeClient() {
   };
 
   /* ── Export / Download ── */
-  const generateImage = useCallback(async (): Promise<string | null> => {
+  const generateImage = useCallback(async (format: "png" | "jpeg" = "png"): Promise<string | null> => {
     if (!exportRef.current) return null;
     const container = exportRef.current;
 
@@ -211,7 +211,16 @@ export default function HomeClient() {
       })
     );
 
-    const { toPng } = await import("html-to-image");
+    const { toPng, toJpeg } = await import("html-to-image");
+    if (format === "jpeg") {
+      return toJpeg(container, {
+        width: 800,
+        height: 1120,
+        pixelRatio: 2,
+        quality: 0.88,
+        cacheBust: false,
+      });
+    }
     return toPng(container, {
       width: 800,
       height: 1120,
@@ -254,8 +263,9 @@ export default function HomeClient() {
       "Here is my official Hacker House Goa 2026 ID card! 🌴💻\n\n#framedinGoa #HackerHouseGoa #HHGoa2026";
 
     try {
-      // 1. Generate the PNG (data-URL, produced by html-to-image on the hidden export div).
-      const dataUrl = await generateImage();
+      // 1. Generate the JPEG (data-URL, produced by html-to-image on the hidden export div).
+      //    Highly compressed (JPEG quality 0.88) to stay well under Vercel's 4.5MB payload limit.
+      const dataUrl = await generateImage("jpeg");
       if (!dataUrl) {
         setExportStatus("Failed to render card image.");
         return;
@@ -270,8 +280,8 @@ export default function HomeClient() {
           .filter(Boolean)
           .join("-")
           .toLowerCase() || "hh-goa"
-      }-id.png`;
-      const file = new File([blob], filename, { type: "image/png" });
+      }-id.jpg`;
+      const file = new File([blob], filename, { type: "image/jpeg" });
 
       // ── STRATEGY A: Web Share API with file (mobile — fast path) ──
       // On iOS Safari ≥ 13 and Android Chrome ≥ 89, navigator.share with
