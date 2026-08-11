@@ -631,8 +631,8 @@ export default function HomeClient() {
                       <input
                         id="zoom-slider"
                         type="range"
-                        min={100}
-                        max={300}
+                        min={50}
+                        max={400}
                         step={5}
                         aria-label="Adjust photo zoom scale"
                         value={Math.round(photoTransform.scale * 100)}
