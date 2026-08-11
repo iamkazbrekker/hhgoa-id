@@ -393,7 +393,7 @@ export default function HomeClient() {
           >
 
 
-            {/* HACKER [गोवा] HOUSE title matching reference layout */}
+            {/* HACKER [गोवा] HOUSE title matching reference layout (Fully Dynamic) */}
             <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", margin: "0 0 32px", userSelect: "none" }}>
               <div style={{ position: "relative", width: "100%", maxWidth: 640, height: "auto", display: "block" }}>
                 <Image
@@ -404,25 +404,25 @@ export default function HomeClient() {
                   style={{ width: "100%", height: "auto", display: "block" }}
                   priority
                 />
-              </div>
-              {/* The overlapping pink "गोवा" text in the center */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: "51%",
-                  left: "53%",
-                  transform: "translate(-50%, -50%) rotate(-5deg)",
-                  width: "75px",
-                  zIndex: 10,
-                  filter: "drop-shadow(4px 4px 0px #000)",
-                }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/id/goa_hindi.svg"
-                  alt="गोवा"
-                  style={{ width: "100%", height: "auto", display: "block" }}
-                />
+                {/* The overlapping pink "गोवा" text in the center — dynamically positioned and scaled relative to the title image */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "51%",
+                    left: "53%",
+                    transform: "translate(-50%, -50%) rotate(-5deg)",
+                    width: "clamp(34px, 11.72%, 75px)",
+                    zIndex: 10,
+                    filter: "drop-shadow(clamp(2px, 0.6vw, 4px) clamp(2px, 0.6vw, 4px) 0px #000)",
+                  }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/id/goa_hindi.svg"
+                    alt="गोवा"
+                    style={{ width: "100%", height: "auto", display: "block" }}
+                  />
+                </div>
               </div>
             </div>
 
