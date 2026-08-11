@@ -255,49 +255,106 @@ export default function HomeClient() {
     }
   }, [generateImage, preview.firstName, preview.lastName]);
 
-  const shareOnX = useCallback(() => {
-    const POST_TEXT =
-      "Here is my official Hacker House Goa 2026 ID card!!\n\nExcited to build, ship, and connect in Goa. \n\n #FrameInGoa #HackerHouseGoa #HHGoa2026\n\nhttps://hhgoa-idgenerator.vercel.app";
+  const shareOnX = useCallback(async () => {
+    // ── STEP 1: Open blank popup SYNCHRONOUSLY inside the user-gesture frame.
+    // Browsers only allow window.open() without popup-blocker inside a synchronous
+    // click handler. We open a blank window now, then navigate it once we have the URL.
+    const popup = typeof window !== "undefined"
+      ? window.open("about:blank", "_blank")
+      : null;
 
-    // ✅ Build intent URL and open X SYNCHRONOUSLY during the user-gesture frame.
-    // On iOS/Android: Twitter's Universal Links / App Links intercept
-    // twitter.com URLs and open the X app directly — no OS share sheet shown.
-    // On desktop: opens the X web composer in a new tab.
-    // Any `await` before window.open() causes popup blockers to block it.
-    const twitterIntentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(POST_TEXT)}`;
-    window.open(twitterIntentUrl, "_blank", "noopener,noreferrer");
-
-    // Show guidance modal immediately so user knows to attach the card image.
-    setShowShareModal(true);
-
-    // Download the card PNG in the background (after popup is safely open).
     setIsExporting(true);
-    setExportStatus("Downloading card...");
-    generateImage("png")
-      .then((dataUrl) => {
-        if (!dataUrl) return;
-        const name = `${[preview.firstName, preview.lastName]
-          .filter(Boolean)
-          .join("-")
-          .toLowerCase() || "hh-goa"
-          }-id.png`;
+    setExportStatus("Rendering card...");
+
+    const CAPTION =
+      "Here is my official Hacker House Goa 2026 ID card! 🌴💻\n\nExcited to build, ship, and connect in Goa. 🚀\n\n#FrameInGoa #HackerHouseGoa #HHGoa2026";
+
+    const SITE_URL =
+      (typeof window !== "undefined" ? window.location.origin : null) ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      "https://hhgoa-idgenerator.vercel.app";
+
+    try {
+      // ── STEP 2: Render the card as a JPEG (smaller payload for upload).
+      const jpegDataUrl = await generateImage("jpeg");
+      if (!jpegDataUrl) {
+        setExportStatus("Failed to render card.");
+        if (popup) popup.close();
+        return;
+      }
+
+      // ── STEP 3: Upload to /api/upload-card → Cloudinary → get shareId.
+      setExportStatus("Uploading card to cloud...");
+      const fetchRes = await fetch(jpegDataUrl);
+      const blob = await fetchRes.blob();
+      const baseName = [preview.firstName, preview.lastName]
+        .filter(Boolean)
+        .join("-")
+        .toLowerCase() || "hh-goa";
+      const file = new File([blob], `${baseName}-id.jpg`, { type: "image/jpeg" });
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      let sharePageUrl = SITE_URL; // fallback: no share page, just homepage
+      let uploadOk = false;
+      try {
+        const uploadRes = await fetch("/api/upload-card", {
+          method: "POST",
+          body: formData,
+        });
+        if (uploadRes.ok) {
+          const json = (await uploadRes.json()) as { shareId?: string; error?: string };
+          if (json.shareId) {
+            sharePageUrl = `${SITE_URL}/share/${json.shareId}`;
+            uploadOk = true;
+          } else {
+            console.warn("[shareOnX] Upload succeeded but no shareId:", json);
+          }
+        } else {
+          const err = await uploadRes.text();
+          console.warn("[shareOnX] Upload error:", uploadRes.status, err);
+        }
+      } catch (uploadErr) {
+        console.warn("[shareOnX] Upload network error — using fallback URL:", uploadErr);
+      }
+
+      // ── STEP 4: Navigate the pre-opened popup to the X intent URL.
+      // The tweet text contains the caption + share URL.
+      // X's crawler will fetch /share/[id] to get og:image → shows card preview.
+      const tweetText = `${CAPTION}\n\n${sharePageUrl}`;
+      const intentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+      if (popup) {
+        popup.location.href = intentUrl;
+      } else {
+        // popup was blocked (very rare since we opened synchronously) — redirect self as last resort
+        window.open(intentUrl, "_blank", "noopener,noreferrer");
+      }
+
+      // ── STEP 5: Trigger local PNG download (high-res pass for the user to keep).
+      setExportStatus(uploadOk ? "Card uploaded! Downloading PNG..." : "Downloading PNG...");
+      generateImage("png").then((pngDataUrl) => {
+        if (!pngDataUrl) return;
         const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = name;
+        a.href = pngDataUrl;
+        a.download = `${baseName}-hhgoa-id.png`;
         a.style.display = "none";
         document.body.appendChild(a);
         a.click();
         setTimeout(() => document.body.removeChild(a), 500);
-        setExportStatus("Card downloaded!");
-      })
-      .catch((err) => {
-        console.error("Card download failed:", err);
-        setExportStatus("Download failed — try Download PNG.");
-      })
-      .finally(() => {
-        setIsExporting(false);
-        setTimeout(() => setExportStatus(null), 4000);
-      });
+      }).catch((e) => console.warn("[shareOnX] PNG download failed:", e));
+
+      // Show the guidance modal so user knows to attach the downloaded PNG to the post.
+      setShowShareModal(true);
+      setExportStatus(uploadOk ? "Shared! Card preview live on X." : "Shared! Attach the downloaded PNG.");
+    } catch (err) {
+      console.error("[shareOnX] Fatal error:", err);
+      setExportStatus("Share failed — try Download PNG.");
+      if (popup) popup.close();
+    } finally {
+      setIsExporting(false);
+      setTimeout(() => setExportStatus(null), 4000);
+    }
   }, [generateImage, preview.firstName, preview.lastName]);
 
 
@@ -360,25 +417,25 @@ export default function HomeClient() {
                   style={{ width: "100%", height: "auto", display: "block" }}
                   priority
                 />
-                {/* The overlapping pink "गोवा" text in the center — scales linearly with title image */}
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "51%",
-                    left: "53%",
-                    transform: "translate(-50%, -50%) rotate(-5deg)",
-                    width: "clamp(32px, 11.72%, 75px)",
-                    zIndex: 10,
-                    filter: "drop-shadow(clamp(2px, 0.6vw, 4px) clamp(2px, 0.6vw, 4px) 0px #000)",
-                  }}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/id/goa_hindi.svg"
-                    alt="गोवा"
-                    style={{ width: "100%", height: "auto", display: "block" }}
-                  />
-                </div>
+              </div>
+              {/* The overlapping pink "गोवा" text in the center */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "51%",
+                  left: "53%",
+                  transform: "translate(-50%, -50%) rotate(-5deg)",
+                  width: "75px",
+                  zIndex: 10,
+                  filter: "drop-shadow(4px 4px 0px #000)",
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/id/goa_hindi.svg"
+                  alt="गोवा"
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
               </div>
             </div>
 

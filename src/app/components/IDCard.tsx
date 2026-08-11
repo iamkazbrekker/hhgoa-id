@@ -97,8 +97,13 @@ export default function IDCard({
       const initX = photoTransform.x;
       const initY = photoTransform.y;
       const initScale = photoTransform.scale;
+      const sHint = scaleHint || 1;
       const onMove = (ev: MouseEvent) => {
-        onPhotoTransformChange({ scale: initScale, x: initX + (ev.clientX - startX), y: initY + (ev.clientY - startY) });
+        onPhotoTransformChange({
+          scale: initScale,
+          x: initX + (ev.clientX - startX) / sHint,
+          y: initY + (ev.clientY - startY) / sHint,
+        });
       };
       const onUp = () => {
         window.removeEventListener("mousemove", onMove);
@@ -107,7 +112,7 @@ export default function IDCard({
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [interactive, onPhotoTransformChange, photoTransform]
+    [interactive, onPhotoTransformChange, photoTransform, scaleHint]
   );
 
   const photoContainerRef = React.useRef<HTMLDivElement>(null);
@@ -326,7 +331,7 @@ export default function IDCard({
       el.removeEventListener("gesturechange", onGestureChange);
       cleanupWindowListeners();
     };
-  }, []);
+  }, [photoUrl, interactive]);
 
   return (
     <div
