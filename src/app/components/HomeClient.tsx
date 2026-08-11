@@ -256,13 +256,6 @@ export default function HomeClient() {
   }, [generateImage, preview.firstName, preview.lastName]);
 
   const shareOnX = useCallback(async () => {
-    // ── STEP 1: Open blank popup SYNCHRONOUSLY inside the user-gesture frame.
-    // Browsers only allow window.open() without popup-blocker inside a synchronous
-    // click handler. We open a blank window now, then navigate it once we have the URL.
-    const popup = typeof window !== "undefined"
-      ? window.open("about:blank", "_blank")
-      : null;
-
     setIsExporting(true);
     setExportStatus("Rendering card...");
 
@@ -275,16 +268,16 @@ export default function HomeClient() {
       "https://hhgoa-idgenerator.vercel.app";
 
     try {
-      // ── STEP 2: Render the card as a JPEG (smaller payload for upload).
+      // ── STEP 1: Render the card as a JPEG (smaller payload for upload).
       const jpegDataUrl = await generateImage("jpeg");
       if (!jpegDataUrl) {
         setExportStatus("Failed to render card.");
-        if (popup) popup.close();
         return;
       }
 
-      // ── STEP 3: Upload to /api/upload-card → Cloudinary → get shareId.
-      setExportStatus("Uploading card to cloud...");
+      // ── STEP 2: Upload to /api/upload-card → Cloudinary → get shareId.
+      // This gives us a public URL that X's crawler can fetch for og:image.
+      setExportStatus("Uploading card preview...");
       const fetchRes = await fetch(jpegDataUrl);
       const blob = await fetchRes.blob();
       const baseName = [preview.firstName, preview.lastName]
@@ -296,7 +289,7 @@ export default function HomeClient() {
       const formData = new FormData();
       formData.append("file", file);
 
-      let sharePageUrl = SITE_URL; // fallback: no share page, just homepage
+      let sharePageUrl = SITE_URL; // fallback if upload fails
       let uploadOk = false;
       try {
         const uploadRes = await fetch("/api/upload-card", {
@@ -312,27 +305,22 @@ export default function HomeClient() {
             console.warn("[shareOnX] Upload succeeded but no shareId:", json);
           }
         } else {
-          const err = await uploadRes.text();
-          console.warn("[shareOnX] Upload error:", uploadRes.status, err);
+          console.warn("[shareOnX] Upload error:", uploadRes.status, await uploadRes.text());
         }
       } catch (uploadErr) {
         console.warn("[shareOnX] Upload network error — using fallback URL:", uploadErr);
       }
 
-      // ── STEP 4: Navigate the pre-opened popup to the X intent URL.
-      // The tweet text contains the caption + share URL.
-      // X's crawler will fetch /share/[id] to get og:image → shows card preview.
+      // ── STEP 3: Open X directly.
+      // Modern iOS Safari ≥14.5 and Android Chrome propagate the user-gesture
+      // through async/await chains, so window.open() works without a blank-window trick.
+      // Twitter's Universal Links intercept twitter.com URLs and open the X app on mobile.
       const tweetText = `${CAPTION}\n\n${sharePageUrl}`;
       const intentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
-      if (popup) {
-        popup.location.href = intentUrl;
-      } else {
-        // popup was blocked (very rare since we opened synchronously) — redirect self as last resort
-        window.open(intentUrl, "_blank", "noopener,noreferrer");
-      }
+      window.open(intentUrl, "_blank", "noopener,noreferrer");
 
-      // ── STEP 5: Trigger local PNG download (high-res pass for the user to keep).
-      setExportStatus(uploadOk ? "Card uploaded! Downloading PNG..." : "Downloading PNG...");
+      // ── STEP 4: Download a local high-res PNG for the user to keep.
+      setExportStatus(uploadOk ? "Uploaded! Downloading local PNG..." : "Downloading PNG...");
       generateImage("png").then((pngDataUrl) => {
         if (!pngDataUrl) return;
         const a = document.createElement("a");
@@ -344,13 +332,12 @@ export default function HomeClient() {
         setTimeout(() => document.body.removeChild(a), 500);
       }).catch((e) => console.warn("[shareOnX] PNG download failed:", e));
 
-      // Show the guidance modal so user knows to attach the downloaded PNG to the post.
+      // Show guidance modal so user knows about the card preview.
       setShowShareModal(true);
-      setExportStatus(uploadOk ? "Shared! Card preview live on X." : "Shared! Attach the downloaded PNG.");
+      setExportStatus(uploadOk ? "Card preview live on X! ✓" : "Opened X — attach the downloaded PNG.");
     } catch (err) {
       console.error("[shareOnX] Fatal error:", err);
       setExportStatus("Share failed — try Download PNG.");
-      if (popup) popup.close();
     } finally {
       setIsExporting(false);
       setTimeout(() => setExportStatus(null), 4000);
