@@ -267,7 +267,23 @@ export default function HomeClient() {
 
       // ── Desktop path (unchanged from original) ──
 
-      // Try Web Share API first (available in some desktop browsers like Chrome on macOS).
+      // Try mobile share with image if supported
+      if (isMobile) {
+        // Convert dataUrl to a File (same as desktop block)
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        const file = new File([blob], "hh-goa-id.png", { type: "image/png" });
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: "My Hacker House Goa ID Card",
+            text: POST_TEXT,
+          });
+          setExportStatus("Shared via mobile!");
+          return;
+        }
+      }
+
       if (navigator.share) {
         const response = await fetch(dataUrl);
         const blob = await response.blob();
@@ -283,7 +299,43 @@ export default function HomeClient() {
         }
       }
 
-      // Final desktop fallback: download image + open X tweet intent.
+      // If we reach here, either not on mobile or mobile share not supported → fallback to deep‑link flow
+      // Fallback: download the PNG (so user can attach it manually) and try to open the X app.
+      // Download the card
+      const link = document.createElement("a");
+      link.download = "hh-goa-id.png";
+      link.href = dataUrl;
+      link.click();
+
+      setExportStatus("Image saved — opening X app...");
+
+      const encodedText = encodeURIComponent(POST_TEXT);
+      const appDeepLink = `twitter://post?message=${encodedText}`;
+      const webFallback = `https://x.com/intent/post?text=${encodedText}`;
+
+      const iframe = document.createElement("iframe");
+      iframe.style.display = "none";
+      document.body.appendChild(iframe);
+
+      let appOpened = false;
+      const onVisibilityChange = () => {
+        if (document.hidden) appOpened = true;
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
+
+      iframe.src = appDeepLink;
+
+      setTimeout(() => {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        document.body.removeChild(iframe);
+        if (!appOpened) {
+          window.open(webFallback, "_blank");
+          setExportStatus("Opening X web composer...");
+        }
+      }, 1500);
+
+      return;
+
       const link = document.createElement("a");
       link.download = "hh-goa-id.png";
       link.href = dataUrl;
