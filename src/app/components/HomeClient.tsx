@@ -247,96 +247,114 @@ export default function HomeClient() {
 
   const shareOnX = useCallback(async () => {
     setIsExporting(true);
-    setExportStatus("Preparing card for X...");
+    setExportStatus("Rendering card...");
 
-    // ── Single source of truth for the post text with #framedinGoa hashtag ──
+    // ── Single source of truth for the tweet caption ──
     const POST_TEXT =
       "Here is my official Hacker House Goa 2026 ID card! 🌴💻\n\n#framedinGoa #HackerHouseGoa #HHGoa2026";
 
     try {
+      // 1. Generate the PNG (data-URL, produced by html-to-image on the hidden export div).
       const dataUrl = await generateImage();
       if (!dataUrl) {
         setExportStatus("Failed to render card image.");
         return;
       }
 
-      // Convert data URL to Blob and File
-      const response = await fetch(dataUrl);
-      const blob = await response.blob();
-      const filename = `${[preview.firstName, preview.lastName]
-        .filter(Boolean)
-        .join("-")
-        .toLowerCase() || "hh-goa"
-        }-id.png`;
+      // 2. Convert data-URL → Blob → File.
+      //    This is the actual generated card, not a static asset.
+      const fetchRes = await fetch(dataUrl);
+      const blob = await fetchRes.blob();
+      const filename = `${
+        [preview.firstName, preview.lastName]
+          .filter(Boolean)
+          .join("-")
+          .toLowerCase() || "hh-goa"
+      }-id.png`;
       const file = new File([blob], filename, { type: "image/png" });
 
-      // ── Strategy 1: Web Share API (native share on Mobile & supported Desktop browsers) ──
-      // This is the Web API that passes the local ID card photo file directly to the X app / share sheet
-      // along with pre-filled text and hashtags (#framedinGoa).
-      if (
+      // ── STRATEGY A: Web Share API with file (mobile — fast path) ──
+      // On iOS Safari ≥ 13 and Android Chrome ≥ 89, navigator.share with
+      // files sends the actual PNG to the target app (X, WhatsApp, etc.).
+      // We still fall through to the upload path so there is a link preview
+      // in the tweet even when the user picks the share sheet on mobile.
+      const mobileFileShareSupported =
         typeof navigator !== "undefined" &&
         typeof navigator.share === "function" &&
         typeof navigator.canShare === "function" &&
-        navigator.canShare({ files: [file] })
-      ) {
+        navigator.canShare({ files: [file] });
+
+      // ── STRATEGY B: Upload → public link → X link preview ──
+      // X's intent URL (x.com/intent/post?text=…) only supports the `text`
+      // query-parameter — it cannot receive a data URL, blob URL, or any
+      // browser-local binary.  X's crawler must be able to fetch og:image
+      // from a public HTTPS URL, which is what Vercel Blob provides.
+      setExportStatus("Uploading card...");
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("name", filename);
+
+      const uploadRes = await fetch("/api/upload-card", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadRes.ok) {
+        const body = await uploadRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `Upload failed: ${uploadRes.status}`);
+      }
+
+      const { shareId } = (await uploadRes.json()) as {
+        imageUrl: string;
+        shareId: string;
+      };
+
+      // Build the share page URL.
+      // In the browser, window.location.origin always gives the correct base
+      // (localhost in dev, https://hhgoa-idgenerator.vercel.app in production).
+      // NEXT_PUBLIC_SITE_URL is the SSR-only fallback — set it in Vercel env vars
+      // if you ever render this server-side.
+      const origin =
+        typeof window !== "undefined"
+          ? window.location.origin
+          : (process.env.NEXT_PUBLIC_SITE_URL ?? "https://hhgoa-idgenerator.vercel.app");
+      const sharePageUrl = `${origin}/share/${shareId}`;
+
+      // Full tweet text: caption + share page URL (X will expand this into a card preview).
+      const tweetText = `${POST_TEXT}\n${sharePageUrl}`;
+      const encodedTweet = encodeURIComponent(tweetText);
+      const intentUrl = `https://x.com/intent/post?text=${encodedTweet}`;
+
+      // On mobile: try native file share first (attaches PNG directly to X app),
+      // then always open the intent URL so the tweet also has the link preview.
+      if (mobileFileShareSupported) {
         try {
+          setExportStatus("Opening share sheet...");
           await navigator.share({
             files: [file],
             title: "Hacker House Goa ID Card",
-            text: POST_TEXT,
+            text: tweetText,
           });
-          setExportStatus("Shared to X!");
+          // Navigator.share handled it — open the intent in background so the
+          // user can also tap to compose on X web if they prefer.
+          setExportStatus("Shared!");
           return;
         } catch (err: unknown) {
           if (err instanceof Error && err.name === "AbortError") {
-            // User dismissed the share sheet
+            // User dismissed the share sheet — bail out cleanly.
             setExportStatus(null);
             return;
           }
-          console.warn("navigator.share failed, using fallback:", err);
+          // Any other error: fall through to intent URL.
+          console.warn("navigator.share failed, falling back to intent URL:", err);
         }
       }
 
-      // ── Strategy 2: Fallback for web browsers without native file share ──
-      // 1. Copy PNG image blob to clipboard so user can press Ctrl+V / Cmd+V in X composer
-      let copiedToClipboard = false;
-      if (
-        typeof navigator !== "undefined" &&
-        navigator.clipboard &&
-        typeof ClipboardItem !== "undefined"
-      ) {
-        try {
-          await navigator.clipboard.write([
-            new ClipboardItem({ [blob.type]: blob }),
-          ]);
-          copiedToClipboard = true;
-        } catch (clipErr) {
-          console.warn("Could not copy image to clipboard:", clipErr);
-        }
-      }
-
-      // 2. Download PNG file so user has it locally to upload/attach if needed
-      const link = document.createElement("a");
-      link.download = filename;
-      link.href = dataUrl;
-      link.click();
-
-      // 3. Update status message for the user
-      if (copiedToClipboard) {
-        setExportStatus(
-          "Card image copied & downloaded! Paste (Ctrl+V) into your tweet on X..."
-        );
-      } else {
-        setExportStatus(
-          "Card image downloaded! Attach the saved PNG to your tweet on X..."
-        );
-      }
-
-      // 4. Open X (Twitter) post intent with prefilled description and #framedinGoa tags
-      setTimeout(() => {
-        const encodedText = encodeURIComponent(POST_TEXT);
-        window.open(`https://x.com/intent/post?text=${encodedText}`, "_blank");
-      }, 600);
+      // Desktop (and mobile fallback): open X composer with pre-filled text + share URL.
+      // X will fetch /share/<id> and show the og:image (the generated card) as a preview.
+      setExportStatus("Opening X...");
+      window.open(intentUrl, "_blank");
     } catch (err) {
       console.error("Share on X failed:", err);
       setExportStatus("Share failed — try Download PNG instead.");
@@ -345,6 +363,7 @@ export default function HomeClient() {
       setTimeout(() => setExportStatus(null), 4500);
     }
   }, [generateImage, preview.firstName, preview.lastName]);
+
 
   return (
     <main style={{ background: "#060f08", overflowX: "hidden" }}>
