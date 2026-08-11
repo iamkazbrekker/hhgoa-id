@@ -55,6 +55,7 @@ export default function HomeClient() {
   const [isDragging, setIsDragging] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const generatorRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -255,138 +256,111 @@ export default function HomeClient() {
   }, [generateImage, preview.firstName, preview.lastName]);
 
   const shareOnX = useCallback(async () => {
-    setIsExporting(true);
-    setExportStatus("Rendering card...");
-
-    // ── Single source of truth for the tweet caption ──
     const POST_TEXT =
-      "Here is my official Hacker House Goa 2026 ID card! 🌴💻\n\n#framedinGoa #HackerHouseGoa #HHGoa2026";
+      "Here is my official Hacker House Goa 2026 ID card! 🌴💻\n\n#framedinGoa #HackerHouseGoa #HHGoa2026\n\nhttps://hhgoa-idgenerator.vercel.app";
 
-    try {
-      // 1. Generate the JPEG (data-URL, produced by html-to-image on the hidden export div).
-      //    Highly compressed (JPEG quality 0.88) to stay well under Vercel's 4.5MB payload limit.
-      const dataUrl = await generateImage("jpeg");
-      if (!dataUrl) {
-        setExportStatus("Failed to render card image.");
-        return;
-      }
+    const isMobile =
+      typeof navigator !== "undefined" &&
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const supportsFileShare =
+      typeof navigator !== "undefined" &&
+      typeof navigator.share === "function" &&
+      typeof navigator.canShare === "function";
 
-      // 2. Convert data-URL → Blob → File.
-      //    This is the actual generated card, not a static asset.
-      const fetchRes = await fetch(dataUrl);
-      const blob = await fetchRes.blob();
-      const filename = `${
-        [preview.firstName, preview.lastName]
-          .filter(Boolean)
-          .join("-")
-          .toLowerCase() || "hh-goa"
-      }-id.jpg`;
-      const file = new File([blob], filename, { type: "image/jpeg" });
+    // ══ MOBILE PATH: Web Share API ══════════════════════════════════════════
+    // navigator.share() with files opens the NATIVE share sheet on iOS/Android.
+    // When the user picks X, the image is PRE-ATTACHED — no manual steps needed.
+    // navigator.share() is allowed to be called after async image generation
+    // because it is still within the same user-gesture event chain.
+    if (isMobile && supportsFileShare) {
+      setIsExporting(true);
+      setExportStatus("Rendering card...");
+      try {
+        const jpegDataUrl = await generateImage("jpeg");
+        if (!jpegDataUrl) {
+          setExportStatus("Failed to render card image.");
+          return;
+        }
 
-      // ── STRATEGY A: Web Share API with file (mobile — fast path) ──
-      // On iOS Safari ≥ 13 and Android Chrome ≥ 89, navigator.share with
-      // files sends the actual PNG to the target app (X, WhatsApp, etc.).
-      // We still fall through to the upload path so there is a link preview
-      // in the tweet even when the user picks the share sheet on mobile.
-      const mobileFileShareSupported =
-        typeof navigator !== "undefined" &&
-        typeof navigator.share === "function" &&
-        typeof navigator.canShare === "function" &&
-        navigator.canShare({ files: [file] });
+        const res = await fetch(jpegDataUrl);
+        const blob = await res.blob();
+        const filename = `${
+          [preview.firstName, preview.lastName]
+            .filter(Boolean)
+            .join("-")
+            .toLowerCase() || "hh-goa"
+        }-id.jpg`;
+        const file = new File([blob], filename, { type: "image/jpeg" });
 
-      // ── STRATEGY B: Upload → public link → X link preview ──
-      // X's intent URL (x.com/intent/post?text=…) only supports the `text`
-      // query-parameter — it cannot receive a data URL, blob URL, or any
-      // browser-local binary.  X's crawler must be able to fetch og:image
-      // from a public HTTPS URL, which is what Vercel Blob provides.
-      setExportStatus("Uploading card...");
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("name", filename);
-
-      const uploadRes = await fetch("/api/upload-card", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadRes.ok) {
-        const body = await uploadRes.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? `Upload failed: ${uploadRes.status}`);
-      }
-
-      const { shareId } = (await uploadRes.json()) as {
-        imageUrl: string;
-        shareId: string;
-      };
-
-      // Build the share page URL.
-      // In the browser, window.location.origin always gives the correct base
-      // (localhost in dev, https://hhgoa-idgenerator.vercel.app in production).
-      // NEXT_PUBLIC_SITE_URL is the SSR-only fallback — set it in Vercel env vars
-      // if you ever render this server-side.
-      const origin =
-        typeof window !== "undefined"
-          ? window.location.origin
-          : (process.env.NEXT_PUBLIC_SITE_URL ?? "https://hhgoa-idgenerator.vercel.app");
-      const sharePageUrl = `${origin}/share/${shareId}`;
-
-      // Full tweet text: caption + share page URL (X will expand this into a card preview).
-      const tweetText = `${POST_TEXT}\n${sharePageUrl}`;
-      const encodedTweet = encodeURIComponent(tweetText);
-      const intentUrl = `https://x.com/intent/post?text=${encodedTweet}`;
-
-      // On mobile: try native file share first (attaches PNG directly to X app),
-      // then always open the intent URL so the tweet also has the link preview.
-      if (mobileFileShareSupported) {
-        try {
+        if (navigator.canShare({ files: [file] })) {
           setExportStatus("Opening share sheet...");
           await navigator.share({
             files: [file],
+            text: POST_TEXT,
             title: "Hacker House Goa ID Card",
-            text: tweetText,
           });
-          // Navigator.share handled it — open the intent in background so the
-          // user can also tap to compose on X web if they prefer.
           setExportStatus("Shared!");
           return;
-        } catch (err: unknown) {
-          if (err instanceof Error && err.name === "AbortError") {
-            // User dismissed the share sheet — bail out cleanly.
-            setExportStatus(null);
-            return;
-          }
-          // Any other error: fall through to intent URL.
-          console.warn("navigator.share failed, falling back to intent URL:", err);
         }
+        // canShare returned false — fall through to desktop path below.
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          // User dismissed the share sheet — clean exit.
+          setExportStatus(null);
+          return;
+        }
+        // Any other error — fall through to desktop path.
+        console.warn("navigator.share failed, falling back to intent URL:", err);
+      } finally {
+        setIsExporting(false);
+        setTimeout(() => setExportStatus(null), 3000);
       }
-
-      // Desktop (and mobile fallback): open X composer with pre-filled text + share URL.
-      // On mobile, try opening the native X app first via deep link, falling back to the web intent.
-      const isMobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      
-      setExportStatus("Opening X...");
-      if (isMobile) {
-        const appUrl = `twitter://post?message=${encodedTweet}`;
-        window.location.href = appUrl;
-        
-        setTimeout(() => {
-          window.location.href = intentUrl;
-        }, 1500);
-      } else {
-        window.open(intentUrl, "_blank");
-      }
-    } catch (err) {
-      console.error("Share on X failed:", err);
-      setExportStatus("Share failed — try Download PNG instead.");
-    } finally {
-      setIsExporting(false);
-      setTimeout(() => setExportStatus(null), 4500);
     }
+
+    // ══ DESKTOP PATH (and mobile fallback) ══════════════════════════════════
+    // X's intent URL cannot accept image attachments — it only accepts `text`.
+    // Strategy: open X SYNCHRONOUSLY (before any await, or popup blocker fires),
+    // then download the PNG card in the background and guide the user to attach it.
+    const twitterIntentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(POST_TEXT)}`;
+
+    // ✅ MUST be synchronous — any await before window.open() gets blocked.
+    window.open(twitterIntentUrl, "_blank", "noopener,noreferrer");
+    setShowShareModal(true);
+
+    // Now async: generate and download the card PNG.
+    setIsExporting(true);
+    setExportStatus("Downloading card...");
+    generateImage("png")
+      .then((dataUrl) => {
+        if (!dataUrl) return;
+        const name = `${
+          [preview.firstName, preview.lastName]
+            .filter(Boolean)
+            .join("-")
+            .toLowerCase() || "hh-goa"
+        }-id.png`;
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = name;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => document.body.removeChild(a), 500);
+        setExportStatus("Card downloaded!");
+      })
+      .catch((err) => {
+        console.error("Card download failed:", err);
+        setExportStatus("Download failed — try Download PNG.");
+      })
+      .finally(() => {
+        setIsExporting(false);
+        setTimeout(() => setExportStatus(null), 4000);
+      });
   }, [generateImage, preview.firstName, preview.lastName]);
 
 
   return (
+    <>
     <main style={{ background: "#060f08", overflowX: "hidden" }}>
 
       {/* ═══ HERO ═══ */}
@@ -790,5 +764,78 @@ export default function HomeClient() {
         </div>
       </div>
     </main>
+
+      {/* ── Share to X Guidance Modal ── */}
+      {showShareModal && (
+        <div
+          onClick={() => setShowShareModal(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(3, 10, 4, 0.75)",
+            backdropFilter: "blur(4px)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            animation: "fadeIn 0.2s ease-out forwards",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#0c1f0e",
+              border: "2px solid #9ac95f",
+              borderRadius: 20,
+              maxWidth: 420,
+              width: "100%",
+              padding: "28px 24px",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
+              textAlign: "center",
+              animation: "modalPop 0.25s cubic-bezier(0.16,1,0.3,1) forwards",
+            }}
+          >
+            {/* Status badges */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 }}>
+              <span style={{ fontFamily: "Anton, sans-serif", fontSize: "0.75rem", letterSpacing: 1, color: "#9ac95f", background: "rgba(154,201,95,0.15)", border: "1px solid rgba(154,201,95,0.4)", padding: "4px 12px", borderRadius: 20 }}>
+                ✅ X Post Opened
+              </span>
+              <span style={{ fontFamily: "Anton, sans-serif", fontSize: "0.75rem", letterSpacing: 1, color: "#FEE101", background: "rgba(254,225,1,0.1)", border: "1px solid rgba(254,225,1,0.3)", padding: "4px 12px", borderRadius: 20 }}>
+                📸 ID Card Downloading
+              </span>
+            </div>
+
+            {/* Title */}
+            <h3 style={{ fontFamily: "Anton, sans-serif", fontSize: "1.3rem", letterSpacing: 2, color: "#9ac95f", margin: "0 0 14px 0", textTransform: "uppercase" }}>
+              Attach Image to Your X Post
+            </h3>
+
+            {/* Instruction */}
+            <div style={{ display: "flex", alignItems: "center", gap: 14, background: "rgba(154,201,95,0.08)", border: "1.5px solid rgba(154,201,95,0.25)", borderRadius: 14, padding: "14px 16px", marginBottom: 20, textAlign: "left" }}>
+              <div style={{ width: 42, height: 42, background: "rgba(154,201,95,0.12)", border: "1.5px solid #9ac95f", borderRadius: "50%", color: "#9ac95f", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </div>
+              <p style={{ fontFamily: "Anton, sans-serif", fontSize: "0.82rem", letterSpacing: 1, color: "#c8e6a0", margin: 0, lineHeight: 1.5 }}>
+                Your high-res ID card is downloading. Tap the 📎 paperclip in X to attach it to your post before hitting <strong style={{ color: "#FEE101" }}>Publish</strong>!
+              </p>
+            </div>
+
+            {/* Got it button */}
+            <button
+              type="button"
+              onClick={() => setShowShareModal(false)}
+              style={{ width: "100%", height: 48, background: "#9ac95f", color: "#060f08", border: "none", borderRadius: 10, fontFamily: "Anton, sans-serif", fontSize: "1rem", letterSpacing: 2, cursor: "pointer", textTransform: "uppercase", transition: "background 0.2s" }}
+              onMouseOver={(e) => (e.currentTarget.style.background = "#b5e878")}
+              onMouseOut={(e) => (e.currentTarget.style.background = "#9ac95f")}
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
