@@ -144,17 +144,43 @@ export default function IDCard({
     [interactive, onPhotoTransformChange, photoTransform]
   );
 
-  /* ── Scroll to zoom ── */
-  const handlePhotoWheel = useCallback(
-    (e: React.WheelEvent) => {
-      if (!interactive || !onPhotoTransformChange) return;
+  const photoContainerRef = React.useRef<HTMLDivElement>(null);
+
+  const interactiveRef = React.useRef(interactive);
+  interactiveRef.current = interactive;
+  const photoTransformRef = React.useRef(photoTransform);
+  photoTransformRef.current = photoTransform;
+  const onPhotoTransformChangeRef = React.useRef(onPhotoTransformChange);
+  onPhotoTransformChangeRef.current = onPhotoTransformChange;
+
+  React.useEffect(() => {
+    const el = photoContainerRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!interactiveRef.current || !onPhotoTransformChangeRef.current) return;
       e.preventDefault();
+      e.stopPropagation();
       const delta = e.deltaY > 0 ? -0.12 : 0.12;
-      const newScale = Math.max(1, Math.min(4, photoTransform.scale + delta));
-      onPhotoTransformChange({ ...photoTransform, scale: newScale });
-    },
-    [interactive, onPhotoTransformChange, photoTransform]
-  );
+      const current = photoTransformRef.current;
+      const newScale = Math.max(1, Math.min(4, current.scale + delta));
+      onPhotoTransformChangeRef.current({ ...current, scale: newScale });
+    };
+
+    const onGesture = (e: Event) => {
+      e.preventDefault();
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("gesturestart", onGesture, { passive: false });
+    el.addEventListener("gesturechange", onGesture, { passive: false });
+
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("gesturestart", onGesture);
+      el.removeEventListener("gesturechange", onGesture);
+    };
+  }, []);
 
   return (
     <div
@@ -207,10 +233,10 @@ export default function IDCard({
             <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
               {photoUrl ? (
                 <div
-                  style={{ width: "100%", height: "100%", cursor: interactive ? "grab" : "default", overflow: "hidden", position: "relative", userSelect: "none" }}
+                  ref={photoContainerRef}
+                  style={{ width: "100%", height: "100%", cursor: interactive ? "grab" : "default", overflow: "hidden", position: "relative", userSelect: "none", touchAction: "none" }}
                   onMouseDown={handlePhotoMouseDown}
                   onTouchStart={handlePhotoTouchStart}
-                  onWheel={handlePhotoWheel}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -218,7 +244,7 @@ export default function IDCard({
                     alt="User"
                     draggable={false}
                     style={{
-                      width: "100%", height: "100%", objectFit: "cover", display: "block",
+                      width: "100%", height: "100%", objectFit: "contain", display: "block",
                       transform: `translate(${photoTransform.x}px, ${photoTransform.y}px) scale(${photoTransform.scale})`,
                       transformOrigin: "center",
                       pointerEvents: "none",

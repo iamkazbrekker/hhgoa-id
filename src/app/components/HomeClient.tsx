@@ -194,113 +194,105 @@ export default function HomeClient() {
 
   const shareOnX = useCallback(async () => {
     setIsExporting(true);
-    setExportStatus("Preparing...");
+    setExportStatus("Preparing card for X...");
 
-    // ── Single source of truth for the post text ──
+    // ── Single source of truth for the post text with #framedinGoa hashtag ──
     const POST_TEXT =
-      "My official Hacker House Goa 2026 ID card! \uD83C\uDFE0\uD83D\uDCBB\n\n#HackerHouseGoa #HHGoa2026";
-
-    // Detect mobile (Android or iOS)
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      "Here is my official Hacker House Goa 2026 ID card! 🌴💻\n\n#framedinGoa #HackerHouseGoa #HHGoa2026";
 
     try {
       const dataUrl = await generateImage();
-      if (!dataUrl) return;
-
-      // ── Mobile path ──
-      if (isMobile) {
-        // 1. Download the card so the user has it ready to attach manually.
-        const link = document.createElement("a");
-        link.download = "hh-goa-id.png";
-        link.href = dataUrl;
-        link.click();
-
-        setExportStatus("Image saved — opening X app...");
-
-        const encodedText = encodeURIComponent(POST_TEXT);
-        // X app deep-link scheme (works on both Android and iOS when the app is installed).
-        // "twitter://" is the well-known scheme; "x-twitter://" is the newer alias but
-        // "twitter://" still works on the current X app on both platforms.
-        const appDeepLink = `twitter://post?message=${encodedText}`;
-        // Web fallback (x.com is the current canonical domain for intent URLs).
-        const webFallback = `https://x.com/intent/post?text=${encodedText}`;
-
-        // Attempt to open the app via an invisible iframe (avoids leaving the page
-        // blank if the scheme is not handled).  iOS Safari and Android Chrome both
-        // honour the scheme redirect from an iframe src, and if the app is not
-        // installed neither platform throws a visible error.
-        //
-        // LIMITATION: No browser allows a webpage to *know* whether a custom URL
-        // scheme succeeded.  We therefore always set a fallback timer — if the OS
-        // switches to the X app the timer fires but the user is already in the app
-        // and the new tab that opens stays in the background / is immediately
-        // dismissible.  This is the best-effort approach without requiring a backend
-        // or OAuth.
-        const iframe = document.createElement("iframe");
-        iframe.style.display = "none";
-        document.body.appendChild(iframe);
-
-        let appOpened = false;
-
-        // visibilitychange fires when the browser is backgrounded (app switched to).
-        const onVisibilityChange = () => {
-          if (document.hidden) appOpened = true;
-        };
-        document.addEventListener("visibilitychange", onVisibilityChange);
-
-        // Trigger the deep link.
-        iframe.src = appDeepLink;
-
-        // After 1.5 s, if the page is still visible the app didn't open → fall back.
-        setTimeout(() => {
-          document.removeEventListener("visibilitychange", onVisibilityChange);
-          document.body.removeChild(iframe);
-          if (!appOpened) {
-            // App not installed or deep link failed — open web composer.
-            window.open(webFallback, "_blank");
-            setExportStatus("Opening X web composer...");
-          }
-        }, 1500);
-
+      if (!dataUrl) {
+        setExportStatus("Failed to render card image.");
         return;
       }
 
-      // ── Desktop path (unchanged from original) ──
+      // Convert data URL to Blob and File
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+      const filename = `${
+        [preview.firstName, preview.lastName]
+          .filter(Boolean)
+          .join("-")
+          .toLowerCase() || "hh-goa"
+      }-id.png`;
+      const file = new File([blob], filename, { type: "image/png" });
 
-      // Try Web Share API first (available in some desktop browsers like Chrome on macOS).
-      if (navigator.share) {
-        const response = await fetch(dataUrl);
-        const blob = await response.blob();
-        const file = new File([blob], "hh-goa-id.png", { type: "image/png" });
-        if (navigator.canShare?.({ files: [file] })) {
+      // ── Strategy 1: Web Share API (native share on Mobile & supported Desktop browsers) ──
+      // This is the Web API that passes the local ID card photo file directly to the X app / share sheet
+      // along with pre-filled text and hashtags (#framedinGoa).
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.share === "function" &&
+        typeof navigator.canShare === "function" &&
+        navigator.canShare({ files: [file] })
+      ) {
+        try {
           await navigator.share({
             files: [file],
-            title: "My Hacker House Goa ID Card",
+            title: "Hacker House Goa ID Card",
             text: POST_TEXT,
           });
-          setExportStatus("Shared!");
+          setExportStatus("Shared to X!");
           return;
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name === "AbortError") {
+            // User dismissed the share sheet
+            setExportStatus(null);
+            return;
+          }
+          console.warn("navigator.share failed, using fallback:", err);
         }
       }
 
-      // Final desktop fallback: download image + open X tweet intent.
+      // ── Strategy 2: Fallback for web browsers without native file share ──
+      // 1. Copy PNG image blob to clipboard so user can press Ctrl+V / Cmd+V in X composer
+      let copiedToClipboard = false;
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof ClipboardItem !== "undefined"
+      ) {
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({ [blob.type]: blob }),
+          ]);
+          copiedToClipboard = true;
+        } catch (clipErr) {
+          console.warn("Could not copy image to clipboard:", clipErr);
+        }
+      }
+
+      // 2. Download PNG file so user has it locally to upload/attach if needed
       const link = document.createElement("a");
-      link.download = "hh-goa-id.png";
+      link.download = filename;
       link.href = dataUrl;
       link.click();
-      setExportStatus("Image saved — opening X...");
+
+      // 3. Update status message for the user
+      if (copiedToClipboard) {
+        setExportStatus(
+          "Card image copied & downloaded! Paste (Ctrl+V) into your tweet on X..."
+        );
+      } else {
+        setExportStatus(
+          "Card image downloaded! Attach the saved PNG to your tweet on X..."
+        );
+      }
+
+      // 4. Open X (Twitter) post intent with prefilled description and #framedinGoa tags
       setTimeout(() => {
-        const text = encodeURIComponent(POST_TEXT);
-        window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
+        const encodedText = encodeURIComponent(POST_TEXT);
+        window.open(`https://x.com/intent/post?text=${encodedText}`, "_blank");
       }, 600);
     } catch (err) {
-      console.error("Share failed:", err);
-      setExportStatus("Share failed — try Download instead.");
+      console.error("Share on X failed:", err);
+      setExportStatus("Share failed — try Download PNG instead.");
     } finally {
       setIsExporting(false);
-      setTimeout(() => setExportStatus(null), 3500);
+      setTimeout(() => setExportStatus(null), 4500);
     }
-  }, [generateImage]);
+  }, [generateImage, preview.firstName, preview.lastName]);
 
   return (
     <main style={{ background: "#060f08", overflowX: "hidden" }}>
@@ -462,16 +454,18 @@ export default function HomeClient() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                 <div>
-                  <label style={LABEL_STYLE}>First Name</label>
-                  <input type="text" placeholder="SAMARTH" value={form.firstName} maxLength={12}
+                  <label htmlFor="first-name-input" style={LABEL_STYLE}>First Name</label>
+                  <input id="first-name-input" type="text" placeholder="SAMARTH" value={form.firstName} maxLength={12}
+                    autoComplete="off"
                     onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
                     style={INPUT_STYLE}
                     onFocus={(e) => (e.currentTarget.style.borderColor = "#FEE101")}
                     onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(154,201,95,0.4)")} />
                 </div>
                 <div>
-                  <label style={LABEL_STYLE}>Last Name</label>
-                  <input type="text" placeholder="KAPSE" value={form.lastName} maxLength={12}
+                  <label htmlFor="last-name-input" style={LABEL_STYLE}>Last Name</label>
+                  <input id="last-name-input" type="text" placeholder="KAPSE" value={form.lastName} maxLength={12}
+                    autoComplete="off"
                     onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
                     style={INPUT_STYLE}
                     onFocus={(e) => (e.currentTarget.style.borderColor = "#FEE101")}
@@ -480,8 +474,9 @@ export default function HomeClient() {
               </div>
 
               <div style={{ marginBottom: 20 }}>
-                <label style={LABEL_STYLE}>Team Name</label>
-                <input type="text" placeholder="KREMLIN SPIES" value={form.teamName} maxLength={20}
+                <label htmlFor="team-name-input" style={LABEL_STYLE}>Team Name</label>
+                <input id="team-name-input" type="text" placeholder="KREMLIN SPIES" value={form.teamName} maxLength={20}
+                  autoComplete="off"
                   onChange={(e) => setForm((p) => ({ ...p, teamName: e.target.value }))}
                   style={INPUT_STYLE}
                   onFocus={(e) => (e.currentTarget.style.borderColor = "#FEE101")}
@@ -491,14 +486,16 @@ export default function HomeClient() {
               <div style={{ marginBottom: 28 }}>
                 <label style={LABEL_STYLE}>Role</label>
                 {/* Always 3 columns — labels are short enough to fit at 320 px+ */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Select role">
                   {ROLES.map((r) => {
                     const active = form.role === r.value;
                     return (
-                      <button key={r.value} onClick={() => setForm((p) => ({ ...p, role: r.value }))}
-                        style={{ fontFamily: "Anton, sans-serif", fontSize: 13, letterSpacing: 1, textTransform: "uppercase", padding: "12px 8px", border: active ? "2px solid #FEE101" : "2px solid rgba(154,201,95,0.3)", background: active ? "#FEE101" : "rgba(0,0,0,0.4)", color: active ? "#060f08" : "#9ac95f", cursor: "pointer", transition: "all 0.15s" }}
+                      <button key={r.value} type="button" role="radio" aria-checked={active} onClick={() => setForm((p) => ({ ...p, role: r.value }))}
+                        style={{ fontFamily: "Anton, sans-serif", fontSize: 13, letterSpacing: 1, textTransform: "uppercase", padding: "12px 8px", border: active ? "2px solid #FEE101" : "2px solid rgba(154,201,95,0.3)", background: active ? "#FEE101" : "rgba(0,0,0,0.4)", color: active ? "#060f08" : "#9ac95f", cursor: "pointer", transition: "all 0.15s", outline: "none" }}
                         onMouseEnter={(e) => { if (!active) { e.currentTarget.style.borderColor = "#FEE101"; e.currentTarget.style.color = "#FEE101"; } }}
                         onMouseLeave={(e) => { if (!active) { e.currentTarget.style.borderColor = "rgba(154,201,95,0.3)"; e.currentTarget.style.color = "#9ac95f"; } }}
+                        onFocus={(e) => { e.currentTarget.style.borderColor = "#FEE101"; }}
+                        onBlur={(e) => { if (!active) { e.currentTarget.style.borderColor = "rgba(154,201,95,0.3)"; } }}
                       >{r.label}</button>
                     );
                   })}
@@ -510,27 +507,39 @@ export default function HomeClient() {
                 <label style={LABEL_STYLE}>Your Photo</label>
                 <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                   style={{ display: "none" }}
+                  aria-label="Upload photo file"
                   onChange={(e) => handlePhotoChange(e.target.files?.[0] ?? null)} />
                 <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Click or press enter to upload photo"
                   onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
                   onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={handleDrop}
-                  style={{ border: `2px dashed ${isDragging ? "#FEE101" : "rgba(154,201,95,0.35)"}`, background: isDragging ? "rgba(254,225,1,0.04)" : "rgba(0,0,0,0.2)", padding: "28px 20px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, transition: "border-color 0.2s" }}
+                  style={{ border: `2px dashed ${isDragging ? "#FEE101" : "rgba(154,201,95,0.35)"}`, background: isDragging ? "rgba(254,225,1,0.04)" : "rgba(0,0,0,0.2)", padding: "28px 20px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, transition: "border-color 0.2s, background-color 0.2s", outline: "none" }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#FEE101")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(154,201,95,0.35)")}
                 >
                   {form.photoUrl ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={form.photoUrl} alt="preview" style={{ width: 64, height: 64, objectFit: "cover", border: "2px solid #9ac95f" }} />
+                      <img src={form.photoUrl} alt="Photo preview" style={{ width: 64, height: 64, objectFit: "contain", background: "rgba(0,0,0,0.4)", border: "2px solid #9ac95f" }} />
                       <div>
                         <div style={{ color: "#9ac95f", fontFamily: "Anton, sans-serif", fontSize: 13, letterSpacing: 2 }}>Photo Uploaded ✓</div>
-                        <div style={{ color: "rgba(255,255,255,0.35)", fontFamily: "sans-serif", fontSize: 11, marginTop: 4 }}>Tap to change</div>
+                        <div style={{ color: "rgba(255,255,255,0.35)", fontFamily: "sans-serif", fontSize: 11, marginTop: 4 }}>Tap or press Enter to change</div>
                         <div style={{ color: "rgba(154,201,95,0.5)", fontFamily: "sans-serif", fontSize: 10, marginTop: 2 }}>Drag or touch to reposition on preview</div>
                       </div>
                     </div>
                   ) : (
                     <>
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#9ac95f" strokeWidth={1.5}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#9ac95f" strokeWidth={1.5} aria-hidden="true">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                         <circle cx="12" cy="13" r="4" />
                       </svg>
@@ -577,12 +586,14 @@ export default function HomeClient() {
               {form.photoUrl && (
                 <div style={{ width: "100%", padding: "0 4px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ color: "#9ac95f", fontFamily: "sans-serif", fontSize: 11, letterSpacing: 1, textTransform: "uppercase", whiteSpace: "nowrap" }}>Zoom</span>
+                    <label htmlFor="zoom-slider" style={{ color: "#9ac95f", fontFamily: "sans-serif", fontSize: 11, letterSpacing: 1, textTransform: "uppercase", whiteSpace: "nowrap" }}>Zoom</label>
                     <input
+                      id="zoom-slider"
                       type="range"
                       min={100}
                       max={400}
                       step={5}
+                      aria-label="Adjust photo zoom scale"
                       value={Math.round(photoTransform.scale * 100)}
                       onChange={(e) => setPhotoTransform((p) => ({ ...p, scale: Number(e.target.value) / 100 }))}
                       style={{ flex: 1, accentColor: "#FEE101", cursor: "pointer" }}
@@ -592,8 +603,9 @@ export default function HomeClient() {
                     </span>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setPhotoTransform({ scale: 1, x: 0, y: 0 })}
-                    style={{ marginTop: 6, fontFamily: "sans-serif", fontSize: 10, color: "rgba(154,201,95,0.5)", background: "none", border: "none", cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", padding: 0 }}
+                    style={{ marginTop: 6, fontFamily: "sans-serif", fontSize: 10, color: "rgba(154,201,95,0.6)", background: "none", border: "none", cursor: "pointer", letterSpacing: 1, textTransform: "uppercase", padding: 0 }}
                   >
                     Reset position
                   </button>
@@ -603,13 +615,15 @@ export default function HomeClient() {
               {/* Download + Share buttons */}
               <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
                 <button
+                  type="button"
                   onClick={downloadCard}
                   disabled={isExporting}
+                  aria-busy={isExporting}
                   style={{ fontFamily: "Anton, sans-serif", fontSize: 14, letterSpacing: 3, textTransform: "uppercase", padding: "14px 20px", background: "#FEE101", color: "#030a04", border: "2px solid #FEE101", cursor: isExporting ? "wait" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: isExporting ? 0.6 : 1, transition: "all 0.15s" }}
                   onMouseEnter={(e) => { if (!isExporting) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#FEE101"; } }}
                   onMouseLeave={(e) => { if (!isExporting) { e.currentTarget.style.background = "#FEE101"; e.currentTarget.style.color = "#030a04"; } }}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
@@ -618,8 +632,10 @@ export default function HomeClient() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={shareOnX}
                   disabled={isExporting}
+                  aria-busy={isExporting}
                   style={{ fontFamily: "Anton, sans-serif", fontSize: 14, letterSpacing: 3, textTransform: "uppercase", padding: "14px 20px", background: "#000", color: "#fff", border: "2px solid rgba(255,255,255,0.2)", cursor: isExporting ? "wait" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: isExporting ? 0.6 : 1, transition: "all 0.15s" }}
                   onMouseEnter={(e) => { if (!isExporting) { e.currentTarget.style.borderColor = "#fff"; } }}
                   onMouseLeave={(e) => { if (!isExporting) { e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)"; } }}
@@ -631,7 +647,11 @@ export default function HomeClient() {
 
               {/* Status message */}
               {exportStatus && (
-                <div style={{ fontFamily: "sans-serif", fontSize: 12, color: "#9ac95f", letterSpacing: 1, textAlign: "center", padding: "8px 16px", border: "1px solid rgba(154,201,95,0.3)", background: "rgba(154,201,95,0.05)" }}>
+                <div
+                  role="status"
+                  aria-live="polite"
+                  style={{ fontFamily: "sans-serif", fontSize: 12, color: "#9ac95f", letterSpacing: 1, textAlign: "center", padding: "8px 16px", border: "1px solid rgba(154,201,95,0.4)", background: "rgba(154,201,95,0.08)", width: "100%", borderRadius: 2 }}
+                >
                   {exportStatus}
                 </div>
               )}
