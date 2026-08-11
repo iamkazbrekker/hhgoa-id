@@ -2,9 +2,9 @@
 import HomeClient from "./components/HomeClient";
 
 export const metadata: Metadata = {
-  title: "HH GOA — Official ID Card Generator | Hacker House Goa 2026",
+  title: "HH Goa 2K26",
   description:
-    "Generate your official Hacker House Goa stamp-style identity card. Fill in your name, team, and role to mint your hacker cred.",
+    "id generator",
 };
 
 export default function Home() {
