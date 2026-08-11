@@ -80,6 +80,59 @@ export default function HomeClient() {
     return () => ro.disconnect();
   }, []);
 
+  /* ── Prevent site / page zoom ── */
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key === "+" || e.key === "-" || e.key === "=" || e.key === "0" || e.key === "_")
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    };
+
+    const handleGesture = (e: Event) => {
+      e.preventDefault();
+    };
+
+    let lastTouchEnd = 0;
+    const handleTouchEnd = (e: TouchEvent) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+      }
+      lastTouchEnd = now;
+    };
+
+    document.addEventListener("wheel", handleWheel, { passive: false });
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("gesturestart", handleGesture, { passive: false });
+    document.addEventListener("gesturechange", handleGesture, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd, { passive: false });
+
+    return () => {
+      document.removeEventListener("wheel", handleWheel);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("gesturestart", handleGesture);
+      document.removeEventListener("gesturechange", handleGesture);
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, []);
+
   /* ── HEIC-aware photo handler ── */
   const handlePhotoChange = useCallback(async (file: File | null) => {
     if (!file) return;
@@ -120,7 +173,7 @@ export default function HomeClient() {
     const url = URL.createObjectURL(processedFile);
     prevPhotoUrl.current = url;
     setForm((p) => ({ ...p, photoUrl: url }));
-    setPhotoTransform({ scale: 1, x: 0, y: 0 }); // reset on new upload
+    setPhotoTransform({ scale: 1.25, x: 0, y: 0 }); // pre-zoomed so photo automatically zooms in on upload
   }, []);
 
   const handleDrop = useCallback(
@@ -210,12 +263,11 @@ export default function HomeClient() {
       // Convert data URL to Blob and File
       const response = await fetch(dataUrl);
       const blob = await response.blob();
-      const filename = `${
-        [preview.firstName, preview.lastName]
-          .filter(Boolean)
-          .join("-")
-          .toLowerCase() || "hh-goa"
-      }-id.png`;
+      const filename = `${[preview.firstName, preview.lastName]
+        .filter(Boolean)
+        .join("-")
+        .toLowerCase() || "hh-goa"
+        }-id.png`;
       const file = new File([blob], filename, { type: "image/png" });
 
       // ── Strategy 1: Web Share API (native share on Mobile & supported Desktop browsers) ──
@@ -355,7 +407,6 @@ export default function HomeClient() {
           <h1
             style={{
               fontFamily: "Anton, Impact, sans-serif",
-              /* clamp floor lowered so the text scales on 320-375 px phones */
               fontSize: "clamp(32px, 11vw, 115px)",
               color: "#FEE101",
               textTransform: "uppercase",
@@ -591,7 +642,7 @@ export default function HomeClient() {
                       id="zoom-slider"
                       type="range"
                       min={100}
-                      max={400}
+                      max={500}
                       step={5}
                       aria-label="Adjust photo zoom scale"
                       value={Math.round(photoTransform.scale * 100)}

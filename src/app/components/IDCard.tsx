@@ -114,34 +114,77 @@ export default function IDCard({
     [interactive, onPhotoTransformChange, photoTransform]
   );
 
-  /* ── Touch drag ── */
+  /* ── Touch drag & pinch zoom ── */
   const handlePhotoTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      if (!interactive || !onPhotoTransformChange || e.touches.length !== 1) return;
-      const touch = e.touches[0];
-      const startX = touch.clientX;
-      const startY = touch.clientY;
+      if (!interactive || !onPhotoTransformChange) return;
+
+      e.stopPropagation();
+
+      const startTouches = Array.from(e.touches);
       const initX = photoTransform.x;
       const initY = photoTransform.y;
       const initScale = photoTransform.scale;
-      const onMove = (ev: TouchEvent) => {
-        if (ev.touches.length !== 1) return;
-        // Divide by scaleHint so the movement tracks correctly when the card
-        // preview is CSS-scaled down on mobile (otherwise it moves too fast).
-        onPhotoTransformChange({
-          scale: initScale,
-          x: initX + (ev.touches[0].clientX - startX) / scaleHint,
-          y: initY + (ev.touches[0].clientY - startY) / scaleHint,
-        });
+
+      const getDistance = (t1: React.Touch | Touch, t2: React.Touch | Touch) => {
+        return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
       };
-      const onEnd = () => {
-        window.removeEventListener("touchmove", onMove);
-        window.removeEventListener("touchend", onEnd);
+
+      const getCenter = (t1: React.Touch | Touch, t2: React.Touch | Touch) => {
+        return {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2,
+        };
       };
-      window.addEventListener("touchmove", onMove, { passive: false });
-      window.addEventListener("touchend", onEnd);
+
+      const initialDist = startTouches.length >= 2 ? getDistance(startTouches[0], startTouches[1]) : 0;
+      const initialCenter = startTouches.length >= 2 ? getCenter(startTouches[0], startTouches[1]) : { x: startTouches[0].clientX, y: startTouches[0].clientY };
+
+      const onTouchMove = (ev: TouchEvent) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        const touches = ev.touches;
+        if (touches.length === 1) {
+          // 1-finger pan
+          const deltaX = (touches[0].clientX - initialCenter.x) / scaleHint;
+          const deltaY = (touches[0].clientY - initialCenter.y) / scaleHint;
+          onPhotoTransformChange({
+            scale: initScale,
+            x: initX + deltaX,
+            y: initY + deltaY,
+          });
+        } else if (touches.length >= 2 && initialDist > 0) {
+          // 2-finger pinch zoom + pan
+          const currentDist = getDistance(touches[0], touches[1]);
+          const scaleRatio = currentDist / initialDist;
+          const newScale = Math.max(1, Math.min(5, initScale * scaleRatio));
+
+          const currentCenter = getCenter(touches[0], touches[1]);
+          const deltaX = (currentCenter.x - initialCenter.x) / scaleHint;
+          const deltaY = (currentCenter.y - initialCenter.y) / scaleHint;
+
+          onPhotoTransformChange({
+            scale: newScale,
+            x: initX + deltaX,
+            y: initY + deltaY,
+          });
+        }
+      };
+
+      const onTouchEnd = (ev: TouchEvent) => {
+        if (ev.touches.length === 0) {
+          window.removeEventListener("touchmove", onTouchMove);
+          window.removeEventListener("touchend", onTouchEnd);
+          window.removeEventListener("touchcancel", onTouchEnd);
+        }
+      };
+
+      window.addEventListener("touchmove", onTouchMove, { passive: false });
+      window.addEventListener("touchend", onTouchEnd);
+      window.addEventListener("touchcancel", onTouchEnd);
     },
-    [interactive, onPhotoTransformChange, photoTransform]
+    [interactive, onPhotoTransformChange, photoTransform, scaleHint]
   );
 
   const photoContainerRef = React.useRef<HTMLDivElement>(null);
@@ -163,22 +206,49 @@ export default function IDCard({
       e.stopPropagation();
       const delta = e.deltaY > 0 ? -0.12 : 0.12;
       const current = photoTransformRef.current;
-      const newScale = Math.max(1, Math.min(4, current.scale + delta));
+      const newScale = Math.max(1, Math.min(5, current.scale + delta));
       onPhotoTransformChangeRef.current({ ...current, scale: newScale });
     };
 
-    const onGesture = (e: Event) => {
+    let gestureInitScale = 1;
+    const onGestureStart = (e: Event) => {
+      if (!interactiveRef.current) return;
       e.preventDefault();
+      e.stopPropagation();
+      gestureInitScale = photoTransformRef.current.scale;
+    };
+
+    const onGestureChange = (e: Event) => {
+      if (!interactiveRef.current || !onPhotoTransformChangeRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const gestureEvent = e as unknown as { scale: number };
+      if (gestureEvent.scale) {
+        const newScale = Math.max(1, Math.min(5, gestureInitScale * gestureEvent.scale));
+        const current = photoTransformRef.current;
+        onPhotoTransformChangeRef.current({
+          ...current,
+          scale: newScale,
+        });
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!interactiveRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
     };
 
     el.addEventListener("wheel", onWheel, { passive: false });
-    el.addEventListener("gesturestart", onGesture, { passive: false });
-    el.addEventListener("gesturechange", onGesture, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("gesturestart", onGestureStart, { passive: false });
+    el.addEventListener("gesturechange", onGestureChange, { passive: false });
 
     return () => {
       el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("gesturestart", onGesture);
-      el.removeEventListener("gesturechange", onGesture);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("gesturestart", onGestureStart);
+      el.removeEventListener("gesturechange", onGestureChange);
     };
   }, []);
 
@@ -230,7 +300,7 @@ export default function IDCard({
         <div style={{ position: "relative", width: "100%", height: "100%" }}>
           <div style={{ position: "absolute", top: 4, left: -8, width: CONFIG.photo.width - 4, height: CONFIG.photo.height - 4, background: "#FEE101", transform: "rotate(-18deg)", zIndex: 0, border: "2px solid #16683b" }} />
           <div style={{ position: "absolute", top: 0, left: 0, width: CONFIG.photo.width - 4, height: CONFIG.photo.height - 4, background: "#FEE101", padding: "12px", boxShadow: "3px 3px 0 rgba(0,0,0,0.25)", zIndex: 1, border: "2px solid #16683b" }}>
-            <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
+            <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative", background: "#060f08" }}>
               {photoUrl ? (
                 <div
                   ref={photoContainerRef}
