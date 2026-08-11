@@ -585,7 +585,7 @@ export default function HomeClient() {
                       <div>
                         <div style={{ color: "#9ac95f", fontFamily: "Anton, sans-serif", fontSize: 13, letterSpacing: 2 }}>Photo Uploaded ✓</div>
                         <div style={{ color: "rgba(255,255,255,0.35)", fontFamily: "sans-serif", fontSize: 11, marginTop: 4 }}>Tap or press Enter to change</div>
-                        <div style={{ color: "rgba(154,201,95,0.5)", fontFamily: "sans-serif", fontSize: 10, marginTop: 2 }}>Drag or touch to reposition on preview</div>
+                        <div style={{ color: "rgba(154,201,95,0.5)", fontFamily: "sans-serif", fontSize: 10, marginTop: 2 }}>Pinch to zoom or drag to reposition on preview</div>
                       </div>
                     </div>
                   ) : (
@@ -709,7 +709,7 @@ export default function HomeClient() {
 
               <p style={{ fontFamily: "sans-serif", fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "center", margin: 0, lineHeight: 1.7 }}>
                 Preview updates as you type.<br />
-                Touch or drag to adjust photo position.
+                Pinch to zoom or drag to adjust photo position.
               </p>
             </div>
           </div>
@@ -740,13 +740,13 @@ export default function HomeClient() {
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={typeof window !== "undefined" ? `${window.location.origin}/id/green-bg.webp` : "/id/green-bg.webp"}
+            src="/id/green-bg.webp"
             alt=""
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={typeof window !== "undefined" ? `${window.location.origin}/id/trans-bg.png` : "/id/trans-bg.png"}
+            src="/id/trans-bg.png"
             alt=""
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.12 }}
           />

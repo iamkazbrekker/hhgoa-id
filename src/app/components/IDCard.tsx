@@ -57,16 +57,12 @@ function Img({
   objectFit?: React.CSSProperties["objectFit"];
   forExport?: boolean;
 }) {
-  const absSrc = forExport && src.startsWith("/") && typeof window !== "undefined"
-    ? window.location.origin + src
-    : src;
-
   if (forExport) {
     const imgStyle: React.CSSProperties = fill
       ? { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: objectFit ?? "cover", ...style }
       : { display: "block", objectFit: objectFit ?? "cover", ...style };
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={absSrc} alt={alt} width={width} height={height} style={imgStyle} />;
+    return <img src={src} alt={alt} width={width} height={height} style={imgStyle} />;
   }
   if (fill) {
     return <Image src={src} alt={alt} fill style={{ objectFit: objectFit ?? "cover", ...style }} priority={priority} />;
@@ -114,79 +110,6 @@ export default function IDCard({
     [interactive, onPhotoTransformChange, photoTransform]
   );
 
-  /* ── Touch drag & pinch zoom ── */
-  const handlePhotoTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      if (!interactive || !onPhotoTransformChange) return;
-
-      e.stopPropagation();
-
-      const startTouches = Array.from(e.touches);
-      const initX = photoTransform.x;
-      const initY = photoTransform.y;
-      const initScale = photoTransform.scale;
-
-      const getDistance = (t1: React.Touch | Touch, t2: React.Touch | Touch) => {
-        return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-      };
-
-      const getCenter = (t1: React.Touch | Touch, t2: React.Touch | Touch) => {
-        return {
-          x: (t1.clientX + t2.clientX) / 2,
-          y: (t1.clientY + t2.clientY) / 2,
-        };
-      };
-
-      const initialDist = startTouches.length >= 2 ? getDistance(startTouches[0], startTouches[1]) : 0;
-      const initialCenter = startTouches.length >= 2 ? getCenter(startTouches[0], startTouches[1]) : { x: startTouches[0].clientX, y: startTouches[0].clientY };
-
-      const onTouchMove = (ev: TouchEvent) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-
-        const touches = ev.touches;
-        if (touches.length === 1) {
-          // 1-finger pan
-          const deltaX = (touches[0].clientX - initialCenter.x) / scaleHint;
-          const deltaY = (touches[0].clientY - initialCenter.y) / scaleHint;
-          onPhotoTransformChange({
-            scale: initScale,
-            x: initX + deltaX,
-            y: initY + deltaY,
-          });
-        } else if (touches.length >= 2 && initialDist > 0) {
-          // 2-finger pinch zoom + pan
-          const currentDist = getDistance(touches[0], touches[1]);
-          const scaleRatio = currentDist / initialDist;
-          const newScale = Math.max(1, Math.min(5, initScale * scaleRatio));
-
-          const currentCenter = getCenter(touches[0], touches[1]);
-          const deltaX = (currentCenter.x - initialCenter.x) / scaleHint;
-          const deltaY = (currentCenter.y - initialCenter.y) / scaleHint;
-
-          onPhotoTransformChange({
-            scale: newScale,
-            x: initX + deltaX,
-            y: initY + deltaY,
-          });
-        }
-      };
-
-      const onTouchEnd = (ev: TouchEvent) => {
-        if (ev.touches.length === 0) {
-          window.removeEventListener("touchmove", onTouchMove);
-          window.removeEventListener("touchend", onTouchEnd);
-          window.removeEventListener("touchcancel", onTouchEnd);
-        }
-      };
-
-      window.addEventListener("touchmove", onTouchMove, { passive: false });
-      window.addEventListener("touchend", onTouchEnd);
-      window.addEventListener("touchcancel", onTouchEnd);
-    },
-    [interactive, onPhotoTransformChange, photoTransform, scaleHint]
-  );
-
   const photoContainerRef = React.useRef<HTMLDivElement>(null);
 
   const interactiveRef = React.useRef(interactive);
@@ -195,17 +118,175 @@ export default function IDCard({
   photoTransformRef.current = photoTransform;
   const onPhotoTransformChangeRef = React.useRef(onPhotoTransformChange);
   onPhotoTransformChangeRef.current = onPhotoTransformChange;
+  const scaleHintRef = React.useRef(scaleHint);
+  scaleHintRef.current = scaleHint;
+
+  const touchStateRef = React.useRef({
+    isTracking: false,
+    isMultiTouch: false,
+    startTouch1: { x: 0, y: 0 },
+    startTouch2: { x: 0, y: 0 },
+    startDist: 0,
+    startCenter: { x: 0, y: 0 },
+    initScale: 1,
+    initX: 0,
+    initY: 0,
+  });
 
   React.useEffect(() => {
     const el = photoContainerRef.current;
     if (!el) return;
 
+    let isListeningToWindow = false;
+
+    const cleanupWindowListeners = () => {
+      if (isListeningToWindow) {
+        window.removeEventListener("touchmove", onWindowTouchMove);
+        window.removeEventListener("touchend", onWindowTouchEnd);
+        window.removeEventListener("touchcancel", onWindowTouchEnd);
+        isListeningToWindow = false;
+      }
+    };
+
+    const attachWindowListeners = () => {
+      if (!isListeningToWindow) {
+        window.addEventListener("touchmove", onWindowTouchMove, { passive: false });
+        window.addEventListener("touchend", onWindowTouchEnd, { passive: false });
+        window.addEventListener("touchcancel", onWindowTouchEnd, { passive: false });
+        isListeningToWindow = true;
+      }
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (!interactiveRef.current || !onPhotoTransformChangeRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const touches = Array.from(e.touches);
+      const current = photoTransformRef.current;
+      const state = touchStateRef.current;
+
+      state.isTracking = true;
+      state.initScale = current.scale;
+      state.initX = current.x;
+      state.initY = current.y;
+
+      if (touches.length === 1) {
+        state.isMultiTouch = false;
+        state.startTouch1 = { x: touches[0].clientX, y: touches[0].clientY };
+      } else if (touches.length >= 2) {
+        state.isMultiTouch = true;
+        state.startTouch1 = { x: touches[0].clientX, y: touches[0].clientY };
+        state.startTouch2 = { x: touches[1].clientX, y: touches[1].clientY };
+        state.startDist = Math.hypot(
+          touches[0].clientX - touches[1].clientX,
+          touches[0].clientY - touches[1].clientY
+        );
+        state.startCenter = {
+          x: (touches[0].clientX + touches[1].clientX) / 2,
+          y: (touches[0].clientY + touches[1].clientY) / 2,
+        };
+      }
+
+      attachWindowListeners();
+    };
+
+    const onWindowTouchMove = (e: TouchEvent) => {
+      if (!interactiveRef.current || !onPhotoTransformChangeRef.current) return;
+
+      const state = touchStateRef.current;
+      if (!state.isTracking) return;
+
+      e.preventDefault();
+
+      const touches = Array.from(e.touches);
+      const sHint = scaleHintRef.current || 1;
+
+      if (touches.length === 1) {
+        if (state.isMultiTouch) {
+          state.isMultiTouch = false;
+          state.startTouch1 = { x: touches[0].clientX, y: touches[0].clientY };
+          const current = photoTransformRef.current;
+          state.initScale = current.scale;
+          state.initX = current.x;
+          state.initY = current.y;
+        }
+
+        const deltaX = (touches[0].clientX - state.startTouch1.x) / sHint;
+        const deltaY = (touches[0].clientY - state.startTouch1.y) / sHint;
+
+        onPhotoTransformChangeRef.current({
+          scale: state.initScale,
+          x: state.initX + deltaX,
+          y: state.initY + deltaY,
+        });
+      } else if (touches.length >= 2) {
+        if (!state.isMultiTouch || state.startDist === 0) {
+          state.isMultiTouch = true;
+          state.startTouch1 = { x: touches[0].clientX, y: touches[0].clientY };
+          state.startTouch2 = { x: touches[1].clientX, y: touches[1].clientY };
+          state.startDist = Math.hypot(
+            touches[0].clientX - touches[1].clientX,
+            touches[0].clientY - touches[1].clientY
+          );
+          state.startCenter = {
+            x: (touches[0].clientX + touches[1].clientX) / 2,
+            y: (touches[0].clientY + touches[1].clientY) / 2,
+          };
+          const current = photoTransformRef.current;
+          state.initScale = current.scale;
+          state.initX = current.x;
+          state.initY = current.y;
+        }
+
+        const currentDist = Math.hypot(
+          touches[0].clientX - touches[1].clientX,
+          touches[0].clientY - touches[1].clientY
+        );
+        const currentCenter = {
+          x: (touches[0].clientX + touches[1].clientX) / 2,
+          y: (touches[0].clientY + touches[1].clientY) / 2,
+        };
+
+        if (state.startDist > 0) {
+          const scaleRatio = currentDist / state.startDist;
+          const newScale = Math.max(1, Math.min(5, state.initScale * scaleRatio));
+          const deltaX = (currentCenter.x - state.startCenter.x) / sHint;
+          const deltaY = (currentCenter.y - state.startCenter.y) / sHint;
+
+          onPhotoTransformChangeRef.current({
+            scale: newScale,
+            x: state.initX + deltaX,
+            y: state.initY + deltaY,
+          });
+        }
+      }
+    };
+
+    const onWindowTouchEnd = (e: TouchEvent) => {
+      const state = touchStateRef.current;
+      const touches = Array.from(e.touches);
+
+      if (touches.length === 0) {
+        state.isTracking = false;
+        state.isMultiTouch = false;
+        cleanupWindowListeners();
+      } else if (touches.length === 1) {
+        state.isMultiTouch = false;
+        state.startTouch1 = { x: touches[0].clientX, y: touches[0].clientY };
+        const current = photoTransformRef.current;
+        state.initScale = current.scale;
+        state.initX = current.x;
+        state.initY = current.y;
+      }
+    };
+
     const onWheel = (e: WheelEvent) => {
       if (!interactiveRef.current || !onPhotoTransformChangeRef.current) return;
       e.preventDefault();
       e.stopPropagation();
-      const delta = e.deltaY > 0 ? -0.12 : 0.12;
       const current = photoTransformRef.current;
+      const delta = e.ctrlKey ? -e.deltaY * 0.01 : (e.deltaY > 0 ? -0.1 : 0.1);
       const newScale = Math.max(1, Math.min(5, current.scale + delta));
       onPhotoTransformChangeRef.current({ ...current, scale: newScale });
     };
@@ -233,22 +314,17 @@ export default function IDCard({
       }
     };
 
-    const onTouchMove = (e: TouchEvent) => {
-      if (!interactiveRef.current) return;
-      e.preventDefault();
-      e.stopPropagation();
-    };
-
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
     el.addEventListener("wheel", onWheel, { passive: false });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("gesturestart", onGestureStart, { passive: false });
     el.addEventListener("gesturechange", onGestureChange, { passive: false });
 
     return () => {
+      el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("gesturestart", onGestureStart);
       el.removeEventListener("gesturechange", onGestureChange);
+      cleanupWindowListeners();
     };
   }, []);
 
@@ -306,7 +382,6 @@ export default function IDCard({
                   ref={photoContainerRef}
                   style={{ width: "100%", height: "100%", cursor: interactive ? "grab" : "default", overflow: "hidden", position: "relative", userSelect: "none", touchAction: "none" }}
                   onMouseDown={handlePhotoMouseDown}
-                  onTouchStart={handlePhotoTouchStart}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -322,7 +397,7 @@ export default function IDCard({
                   />
                   {interactive && (
                     <div style={{ position: "absolute", bottom: 4, right: 4, background: "rgba(0,0,0,0.55)", padding: "2px 6px", borderRadius: 2, pointerEvents: "none" }}>
-                      <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 9, fontFamily: "sans-serif", letterSpacing: 0.5 }}>drag · touch to reposition</span>
+                      <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 9, fontFamily: "sans-serif", letterSpacing: 0.5 }}>pinch to zoom · drag to move</span>
                     </div>
                   )}
                 </div>
