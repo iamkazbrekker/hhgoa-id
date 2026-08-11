@@ -250,7 +250,7 @@ export default function IDCard({
 
         if (state.startDist > 0) {
           const scaleRatio = currentDist / state.startDist;
-          const newScale = Math.max(1, Math.min(5, state.initScale * scaleRatio));
+          const newScale = Math.max(1, Math.min(3, state.initScale * scaleRatio));
           const deltaX = (currentCenter.x - state.startCenter.x) / sHint;
           const deltaY = (currentCenter.y - state.startCenter.y) / sHint;
 
@@ -287,7 +287,7 @@ export default function IDCard({
       e.stopPropagation();
       const current = photoTransformRef.current;
       const delta = e.ctrlKey ? -e.deltaY * 0.01 : (e.deltaY > 0 ? -0.1 : 0.1);
-      const newScale = Math.max(1, Math.min(5, current.scale + delta));
+      const newScale = Math.max(1, Math.min(3, current.scale + delta));
       onPhotoTransformChangeRef.current({ ...current, scale: newScale });
     };
 
@@ -305,7 +305,7 @@ export default function IDCard({
       e.stopPropagation();
       const gestureEvent = e as unknown as { scale: number };
       if (gestureEvent.scale) {
-        const newScale = Math.max(1, Math.min(5, gestureInitScale * gestureEvent.scale));
+        const newScale = Math.max(1, Math.min(3, gestureInitScale * gestureEvent.scale));
         const current = photoTransformRef.current;
         onPhotoTransformChangeRef.current({
           ...current,
@@ -389,10 +389,16 @@ export default function IDCard({
                     alt="User"
                     draggable={false}
                     style={{
-                      width: "100%", height: "100%", objectFit: "contain", display: "block",
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      display: "block",
                       transform: `translate(${photoTransform.x}px, ${photoTransform.y}px) scale(${photoTransform.scale})`,
-                      transformOrigin: "center",
+                      transformOrigin: "center center",
                       pointerEvents: "none",
+                      userSelect: "none",
                     }}
                   />
                   {interactive && (
